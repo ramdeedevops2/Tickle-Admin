@@ -3,8 +3,12 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+    "Courier New", monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -37,7 +41,7 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
-  
+
   --color-sidebar: var(--sidebar-background);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -50,45 +54,45 @@
 
 @layer base {
   :root {
-    /* Pitch Black Theme */
+    /* Pure Black & White Theme */
     --background: #000000;
-    --foreground: #FFFFFF;
+    --foreground: #ffffff;
 
-    --card: #0A0A0A;
-    --card-foreground: #FFFFFF;
+    --card: #000000;
+    --card-foreground: #ffffff;
 
-    --popover: #0A0A0A;
-    --popover-foreground: #FFFFFF;
+    --popover: #000000;
+    --popover-foreground: #ffffff;
 
-    --primary: #90EE90; /* Tickle green */
+    --primary: #ffffff;
     --primary-foreground: #000000;
 
-    --secondary: #111111;
-    --secondary-foreground: #A1A1AA;
+    --secondary: #0f172a;
+    --secondary-foreground: #ffffff;
 
-    --muted: #1A1A1A;
-    --muted-foreground: #71717A;
+    --muted: #111111;
+    --muted-foreground: #a1a1aa;
 
-    --accent: #1A1A1A;
-    --accent-foreground: #90EE90;
+    --accent: #111111;
+    --accent-foreground: #ffffff;
 
-    --destructive: #FF3B30;
-    --destructive-foreground: #FFFFFF;
+    --destructive: #ffffff;
+    --destructive-foreground: #000000;
 
-    --border: rgba(255, 255, 255, 0.1);
-    --input: rgba(255, 255, 255, 0.1);
-    --ring: rgba(144, 238, 144, 0.5);
+    --border: rgba(255, 255, 255, 0.2);
+    --input: rgba(255, 255, 255, 0.2);
+    --ring: rgba(255, 255, 255, 0.5);
 
-    --radius: 0.5rem;
+    --radius: 0.25rem; /* Sharper corners */
 
-    --sidebar-background: #0A0A0A;
-    --sidebar-foreground: #A1A1AA;
-    --sidebar-primary: #90EE90;
+    --sidebar-background: #000000;
+    --sidebar-foreground: #a1a1aa;
+    --sidebar-primary: #ffffff;
     --sidebar-primary-foreground: #000000;
     --sidebar-accent: #111111;
-    --sidebar-accent-foreground: #FFFFFF;
-    --sidebar-border: rgba(255, 255, 255, 0.06);
-    --sidebar-ring: rgba(144, 238, 144, 0.5);
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: rgba(255, 255, 255, 0.15);
+    --sidebar-ring: rgba(255, 255, 255, 0.5);
   }
 }
 
@@ -98,6 +102,8 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
   }
 }

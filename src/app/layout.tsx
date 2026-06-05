@@ -3,7 +3,7 @@ import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 export const metadata: Metadata = {
-  title: "NERVE | Tickle Admin",
+  title: "TICKLE",
   description: "Central command center for the Tickle platform.",
 };
 
@@ -15,9 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark" style={{ colorScheme: "dark" }}>
       <body className="antialiased font-sans bg-background text-foreground">
-        <TooltipProvider>
-          {children}
-        </TooltipProvider>
+        <TooltipProvider>{children}</TooltipProvider>
       </body>
     </html>
   );
