@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   Table,
@@ -12,62 +12,158 @@ import {
 } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { MoreHorizontal, Ban, Eye, UserMinus } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Eye, RefreshCw } from "lucide-react";
+import Link from "next/link";
+
+type ProfileRow = {
+  id: string;
+  user_id: string;
+  name: string | null;
+  email: string | null;
+  photos: string[] | null;
+  bio: string | null;
+  age: number | null;
+  gender: string | null;
+  created_at: string;
+  search_radius: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  is_online: boolean | null;
+  last_active: string | null;
+  interested_in: string | null;
+};
+
+function formatDate(value: string | null) {
+  if (!value) return "-";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "2-digit",
+        year: "numeric",
+      });
+}
+
+function getInitials(value: string | null) {
+  const source = value?.trim() || "US";
+  return source
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
+}
 
 export default function MembersPage() {
-  const [members, setMembers] = useState<any[]>([]);
+  const supabase = useMemo(() => createClient(), []);
+  const [members, setMembers] = useState<ProfileRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const supabase = createClient();
+  const [error, setError] = useState<string | null>(null);
+
+  const loadMembers = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(
+        "id, user_id, name, email, photos, bio, age, gender, created_at, search_radius, latitude, longitude, is_online, last_active, interested_in",
+      )
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      setError(error.message);
+      setMembers([]);
+    } else {
+      setMembers((data ?? []) as ProfileRow[]);
+    }
+
+    setLoading(false);
+  }, [supabase]);
 
   useEffect(() => {
-    const fetchMembers = async () => {
-      // In a real app with proper admin RLS or a service role endpoint,
-      // we would fetch from `auth.users` combined with `public.profiles`.
-      // For now, we fetch from public.profiles
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .order("created_at", { ascending: false });
+    void Promise.resolve().then(loadMembers);
+  }, [loadMembers]);
 
-      if (data) {
-        setMembers(data);
-      }
-      setLoading(false);
+  const stats = useMemo(() => {
+    const online = members.filter((member) => member.is_online).length;
+    const withLocation = members.filter(
+      (member) => member.latitude != null && member.longitude != null,
+    ).length;
+
+    return {
+      total: members.length,
+      online,
+      withLocation,
     };
-
-    fetchMembers();
-  }, [supabase]);
+  }, [members]);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Members</h2>
           <p className="text-muted-foreground">
-            Manage all registered users on the platform.
+            Profiles from the public.profiles table.
           </p>
         </div>
+        <Button
+          variant="outline"
+          onClick={loadMembers}
+          className="rounded-none border-border/50 text-xs uppercase tracking-[0.2em]"
+          disabled={loading}
+        >
+          <RefreshCw className="mr-2 size-4" />
+          Refresh
+        </Button>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card className="border-border/50 bg-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Total Profiles
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-3xl font-black tracking-tight">
+            {stats.total}
+          </CardContent>
+        </Card>
+        <Card className="border-border/50 bg-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Online
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-3xl font-black tracking-tight">
+            {stats.online}
+          </CardContent>
+        </Card>
+        <Card className="border-border/50 bg-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              With Location
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-3xl font-black tracking-tight">
+            {stats.withLocation}
+          </CardContent>
+        </Card>
       </div>
 
       <div className="rounded-md border border-border/50 bg-card">
         <Table>
           <TableHeader>
             <TableRow className="border-border/50 hover:bg-transparent">
-              <TableHead className="w-20">Profile</TableHead>
-              <TableHead>Name</TableHead>
+              <TableHead>Profile</TableHead>
               <TableHead>Age</TableHead>
               <TableHead>Gender</TableHead>
+              <TableHead>Interested In</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              <TableHead className="text-right">Joined</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -78,6 +174,15 @@ export default function MembersPage() {
                   className="h-24 text-center text-muted-foreground"
                 >
                   Loading members...
+                </TableCell>
+              </TableRow>
+            ) : error ? (
+              <TableRow>
+                <TableCell
+                  colSpan={6}
+                  className="h-24 text-center text-destructive"
+                >
+                  {error}
                 </TableCell>
               </TableRow>
             ) : members.length === 0 ? (
@@ -91,21 +196,37 @@ export default function MembersPage() {
               </TableRow>
             ) : (
               members.map((member) => (
-                <TableRow key={member.id} className="border-border/50">
+                <TableRow
+                  key={member.id}
+                  className="cursor-pointer border-border/50 hover:bg-muted/40"
+                >
                   <TableCell>
-                    <Avatar className="h-10 w-10 border border-border">
-                      <AvatarImage src={member.photos?.[0] || ""} />
-                      <AvatarFallback className="bg-muted text-muted-foreground">
-                        {member.name?.substring(0, 2).toUpperCase() || "US"}
-                      </AvatarFallback>
-                    </Avatar>
+                    <Link
+                      href={`/members/${member.user_id}`}
+                      className="flex items-center gap-3"
+                    >
+                      <Avatar className="h-10 w-10 border border-border">
+                        <AvatarImage src={member.photos?.[0] || ""} />
+                        <AvatarFallback className="bg-muted text-muted-foreground">
+                          {getInitials(member.name || member.email)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="space-y-1">
+                        <div className="font-medium">
+                          {member.name || "Unknown"}
+                        </div>
+                        <div className="font-mono text-xs text-muted-foreground">
+                          {member.email || member.user_id}
+                        </div>
+                      </div>
+                    </Link>
                   </TableCell>
-                  <TableCell className="font-medium">
-                    {member.name || "Unknown"}
-                  </TableCell>
-                  <TableCell>{member.age || "—"}</TableCell>
+                  <TableCell>{member.age ?? "-"}</TableCell>
                   <TableCell className="capitalize">
-                    {member.gender || "—"}
+                    {member.gender || "-"}
+                  </TableCell>
+                  <TableCell className="capitalize">
+                    {member.interested_in || "everyone"}
                   </TableCell>
                   <TableCell>
                     <Badge
@@ -119,36 +240,14 @@ export default function MembersPage() {
                       {member.is_online ? "Online" : "Offline"}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-right">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button variant="ghost" className="h-8 w-8 p-0">
-                            <span className="sr-only">Open menu</span>
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        }
-                      />
-                      <DropdownMenuContent
-                        align="end"
-                        className="bg-popover border-border"
-                      >
-                        <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                        <DropdownMenuItem className="cursor-pointer focus:bg-muted">
-                          <Eye className="mr-2 h-4 w-4" />
-                          View Profile
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator className="bg-border/50" />
-                        <DropdownMenuItem className="cursor-pointer text-warning focus:bg-warning/10 focus:text-warning">
-                          <Ban className="mr-2 h-4 w-4" />
-                          Suspend User
-                        </DropdownMenuItem>
-                        <DropdownMenuItem className="cursor-pointer text-destructive focus:bg-destructive/10 focus:text-destructive">
-                          <UserMinus className="mr-2 h-4 w-4" />
-                          Delete Account
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                  <TableCell className="text-right text-xs text-muted-foreground">
+                    <Link
+                      href={`/members/${member.user_id}`}
+                      className="flex items-center justify-end gap-3"
+                    >
+                      <span>{formatDate(member.created_at)}</span>
+                      <Eye className="size-4" />
+                    </Link>
                   </TableCell>
                 </TableRow>
               ))

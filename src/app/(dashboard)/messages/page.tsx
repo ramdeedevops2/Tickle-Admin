@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import {
   Table,
@@ -24,6 +24,16 @@ type MessageRow = {
   created_at: string;
 };
 
+type ProfileRow = {
+  user_id: string;
+  name: string | null;
+  email: string | null;
+};
+
+type MessageView = MessageRow & {
+  sender: ProfileRow | null;
+};
+
 function formatDateTime(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
@@ -37,16 +47,16 @@ function formatDateTime(value: string) {
 }
 
 function shortId(value: string) {
-  return value.length > 12 ? `${value.slice(0, 8)}…${value.slice(-4)}` : value;
+  return value.length > 12 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
 }
 
 export default function MessagesPage() {
-  const [messages, setMessages] = useState<MessageRow[]>([]);
+  const supabase = useMemo(() => createClient(), []);
+  const [messages, setMessages] = useState<MessageView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const supabase = createClient();
 
-  const loadMessages = async () => {
+  const loadMessages = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -59,16 +69,37 @@ export default function MessagesPage() {
     if (error) {
       setError(error.message);
       setMessages([]);
-    } else {
-      setMessages((data ?? []) as MessageRow[]);
+      setLoading(false);
+      return;
     }
 
+    const rows = (data ?? []) as MessageRow[];
+    const senderIds = Array.from(new Set(rows.map((message) => message.sender_id)));
+    const { data: profileData } = senderIds.length
+      ? await supabase
+          .from("profiles")
+          .select("user_id, name, email")
+          .in("user_id", senderIds)
+      : { data: [] };
+    const profilesByUserId = new Map(
+      ((profileData ?? []) as ProfileRow[]).map((profile) => [
+        profile.user_id,
+        profile,
+      ]),
+    );
+
+    setMessages(
+      rows.map((message) => ({
+        ...message,
+        sender: profilesByUserId.get(message.sender_id) ?? null,
+      })),
+    );
     setLoading(false);
-  };
+  }, [supabase]);
 
   useEffect(() => {
-    loadMessages();
-  }, []);
+    void Promise.resolve().then(loadMessages);
+  }, [loadMessages]);
 
   const stats = useMemo(() => {
     const unread = messages.filter((message) => !message.read).length;
@@ -85,14 +116,14 @@ export default function MessagesPage() {
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Messages</h2>
           <p className="text-muted-foreground">
-            Review the app&apos;s message stream from the `public.messages`
-            table.
+            Review the app&apos;s message stream from public.messages.
           </p>
         </div>
         <Button
           variant="outline"
           onClick={loadMessages}
-          className="rounded-none border-border/50 text-xs tracking-[0.2em] uppercase"
+          className="rounded-none border-border/50 text-xs uppercase tracking-[0.2em]"
+          disabled={loading}
         >
           <RefreshCw className="mr-2 size-4" />
           Refresh
@@ -190,8 +221,10 @@ export default function MessagesPage() {
                   <TableCell className="font-mono text-xs text-muted-foreground">
                     {shortId(message.match_id)}
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-muted-foreground">
-                    {shortId(message.sender_id)}
+                  <TableCell className="text-xs text-muted-foreground">
+                    {message.sender?.name ||
+                      message.sender?.email ||
+                      shortId(message.sender_id)}
                   </TableCell>
                   <TableCell>
                     <Badge

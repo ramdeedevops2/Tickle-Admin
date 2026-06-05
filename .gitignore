@@ -12,7 +12,7 @@
 
 # testing
 /coverage
-
+/index.lock
 # next.js
 /.next/
 /out/

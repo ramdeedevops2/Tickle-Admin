@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -16,14 +16,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { RefreshCw, Save, Shield } from "lucide-react";
-
-type AdminRole = "admin" | "moderator" | "viewer" | "pending";
+import { RefreshCw, Trash2, UserPlus } from "lucide-react";
 
 type AdminProfile = {
   id: string;
   email: string;
-  role: AdminRole;
+  role: "admin";
   display_name: string | null;
   avatar_url: string | null;
   created_at: string | null;
@@ -31,30 +29,17 @@ type AdminProfile = {
 };
 
 type FormState = {
-  id: string;
   email: string;
   display_name: string;
-  avatar_url: string;
-  role: AdminRole;
 };
 
 const emptyForm: FormState = {
-  id: "",
   email: "",
   display_name: "",
-  avatar_url: "",
-  role: "pending",
 };
 
-const roleOptions: { label: string; value: AdminRole }[] = [
-  { label: "Admin", value: "admin" },
-  { label: "Moderator", value: "moderator" },
-  { label: "Viewer", value: "viewer" },
-  { label: "Pending", value: "pending" },
-];
-
 function formatDateTime(value: string | null) {
-  if (!value) return "—";
+  if (!value) return "-";
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? value
@@ -77,23 +62,29 @@ function getInitials(nameOrEmail: string) {
 }
 
 export default function AccessPage() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [profiles, setProfiles] = useState<AdminProfile[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  const loadProfiles = async () => {
+  const loadAdmins = useCallback(async () => {
     setLoading(true);
     setError(null);
 
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    setCurrentUserId(user?.id ?? null);
+
     const { data, error } = await supabase
       .from("admin_profiles")
-      .select(
-        "id, email, role, display_name, avatar_url, created_at, updated_at",
-      )
+      .select("id, email, role, display_name, avatar_url, created_at, updated_at")
+      .eq("role", "admin")
       .order("updated_at", { ascending: false });
 
     if (error) {
@@ -104,43 +95,19 @@ export default function AccessPage() {
     }
 
     setLoading(false);
-  };
+  }, [supabase]);
 
   useEffect(() => {
-    loadProfiles();
-  }, []);
+    void Promise.resolve().then(loadAdmins);
+  }, [loadAdmins]);
 
-  const summary = useMemo(() => {
-    const counts = profiles.reduce(
-      (accumulator, profile) => {
-        accumulator[profile.role] += 1;
-        return accumulator;
-      },
-      {
-        admin: 0,
-        moderator: 0,
-        viewer: 0,
-        pending: 0,
-      } as Record<AdminRole, number>,
-    );
-
-    return {
+  const summary = useMemo(
+    () => ({
       total: profiles.length,
-      ...counts,
-    };
-  }, [profiles]);
-
-  const handleEdit = (profile: AdminProfile) => {
-    setForm({
-      id: profile.id,
-      email: profile.email,
-      display_name: profile.display_name ?? "",
-      avatar_url: profile.avatar_url ?? "",
-      role: profile.role,
-    });
-    setSuccess(null);
-    setError(null);
-  };
+      newest: profiles[0]?.updated_at ?? null,
+    }),
+    [profiles],
+  );
 
   const handleReset = () => {
     setForm(emptyForm);
@@ -154,63 +121,122 @@ export default function AccessPage() {
     setError(null);
     setSuccess(null);
 
-    if (!form.id.trim() || !form.email.trim()) {
-      setError("User ID and email are required.");
+    if (!form.email.trim() || !form.display_name.trim()) {
+      setError("Email and display name are required.");
       setSaving(false);
       return;
     }
 
-    const payload = {
-      id: form.id.trim(),
-      email: form.email.trim(),
-      role: form.role,
-      display_name: form.display_name.trim() || null,
-      avatar_url: form.avatar_url.trim() || null,
-      updated_at: new Date().toISOString(),
-    };
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
 
-    const { error } = await supabase
-      .from("admin_profiles")
-      .upsert(payload, { onConflict: "id" });
+    if (!session) {
+      setError("Your session expired. Sign in again.");
+      setSaving(false);
+      return;
+    }
 
-    if (error) {
-      setError(error.message);
+    const response = await fetch("/api/admins", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: form.email.trim(),
+        display_name: form.display_name.trim(),
+      }),
+    });
+
+    const result = (await response.json()) as { error?: string };
+
+    if (!response.ok) {
+      setError(result.error ?? "Failed to create admin.");
     } else {
-      setSuccess("Admin profile saved.");
-      handleReset();
-      await loadProfiles();
+      setSuccess("Admin created.");
+      setForm(emptyForm);
+      await loadAdmins();
     }
 
     setSaving(false);
   };
 
+  const handleDelete = async (profile: AdminProfile) => {
+    if (profile.id === currentUserId) {
+      setError("You cannot delete your own admin access from this page.");
+      setSuccess(null);
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Delete admin access for ${profile.email}?`,
+    );
+    if (!confirmed) return;
+
+    setDeletingId(profile.id);
+    setError(null);
+    setSuccess(null);
+
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session) {
+      setError("Your session expired. Sign in again.");
+      setDeletingId(null);
+      return;
+    }
+
+    const response = await fetch(
+      `/api/admins?id=${encodeURIComponent(profile.id)}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      },
+    );
+    const result = (await response.json()) as { error?: string };
+
+    if (!response.ok) {
+      setError(result.error ?? "Failed to delete admin.");
+    } else {
+      setSuccess("Admin deleted.");
+      await loadAdmins();
+    }
+
+    setDeletingId(null);
+  };
+
   return (
-    <div className="space-y-8 max-w-7xl mx-auto">
+    <div className="mx-auto max-w-7xl space-y-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-4xl font-black tracking-tighter uppercase mb-2">
+          <h1 className="mb-2 text-4xl font-black uppercase tracking-tighter">
             Access
           </h1>
-          <p className="text-muted-foreground text-xs tracking-[0.2em] uppercase">
-            Admin Profiles & Permissions
+          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            Create and delete admins
           </p>
         </div>
         <Button
           type="button"
           variant="outline"
-          onClick={loadProfiles}
-          className="h-12 rounded-none border-border/50 text-xs font-bold uppercase tracking-[0.2em] px-8"
+          onClick={loadAdmins}
+          className="h-12 rounded-none border-border/50 px-8 text-xs font-bold uppercase tracking-[0.2em]"
+          disabled={loading}
         >
           <RefreshCw className="mr-2 size-4" />
           Refresh
         </Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2">
         <Card className="border-border/50 bg-card">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Profiles
+              Admins
             </CardTitle>
           </CardHeader>
           <CardContent className="text-3xl font-black tracking-tight">
@@ -220,31 +246,11 @@ export default function AccessPage() {
         <Card className="border-border/50 bg-card">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
-              Admins
+              Last Updated
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-3xl font-black tracking-tight">
-            {summary.admin}
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Moderators
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-3xl font-black tracking-tight">
-            {summary.moderator}
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Pending
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-3xl font-black tracking-tight">
-            {summary.pending}
+          <CardContent className="font-mono text-sm text-muted-foreground">
+            {formatDateTime(summary.newest)}
           </CardContent>
         </Card>
       </div>
@@ -252,30 +258,10 @@ export default function AccessPage() {
       <div className="grid gap-6 lg:grid-cols-[420px_minmax(0,1fr)]">
         <Card className="border-border/50 bg-card">
           <CardHeader>
-            <CardTitle>Admin Profile Editor</CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Upsert an existing auth user&apos;s admin profile by ID. The first
-              admin can create or edit any admin profile row.
-            </p>
+            <CardTitle>Create Admin</CardTitle>
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={handleSubmit}>
-              <div className="space-y-2">
-                <Label htmlFor="admin-id">Auth User ID</Label>
-                <Input
-                  id="admin-id"
-                  value={form.id}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      id: event.target.value,
-                    }))
-                  }
-                  className="bg-transparent border border-border/50 rounded-none"
-                  placeholder="uuid from auth.users"
-                />
-              </div>
-
               <div className="space-y-2">
                 <Label htmlFor="admin-email">Email</Label>
                 <Input
@@ -288,8 +274,9 @@ export default function AccessPage() {
                       email: event.target.value,
                     }))
                   }
-                  className="bg-transparent border border-border/50 rounded-none"
+                  className="rounded-none border border-border/50 bg-transparent"
                   placeholder="admin@tickle.app"
+                  required
                 />
               </div>
 
@@ -304,46 +291,10 @@ export default function AccessPage() {
                       display_name: event.target.value,
                     }))
                   }
-                  className="bg-transparent border border-border/50 rounded-none"
+                  className="rounded-none border border-border/50 bg-transparent"
                   placeholder="System Admin"
+                  required
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="admin-avatar">Avatar URL</Label>
-                <Input
-                  id="admin-avatar"
-                  value={form.avatar_url}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      avatar_url: event.target.value,
-                    }))
-                  }
-                  className="bg-transparent border border-border/50 rounded-none"
-                  placeholder="https://..."
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="admin-role">Role</Label>
-                <select
-                  id="admin-role"
-                  value={form.role}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      role: event.target.value as AdminRole,
-                    }))
-                  }
-                  className="h-10 w-full rounded-none border border-border/50 bg-transparent px-3 text-sm outline-none"
-                >
-                  {roleOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
               </div>
 
               {error && <p className="text-sm text-destructive">{error}</p>}
@@ -355,8 +306,8 @@ export default function AccessPage() {
                   className="flex-1 rounded-none bg-primary text-primary-foreground hover:bg-primary/90"
                   disabled={saving}
                 >
-                  <Save className="mr-2 size-4" />
-                  {saving ? "Saving..." : "Save Profile"}
+                  <UserPlus className="mr-2 size-4" />
+                  {saving ? "Creating..." : "Create Admin"}
                 </Button>
                 <Button
                   type="button"
@@ -376,7 +327,7 @@ export default function AccessPage() {
             <TableHeader>
               <TableRow className="border-border/50 hover:bg-transparent">
                 <TableHead>Admin</TableHead>
-                <TableHead>Role</TableHead>
+                <TableHead>Status</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead>Updated</TableHead>
                 <TableHead className="text-right">Action</TableHead>
@@ -389,7 +340,7 @@ export default function AccessPage() {
                     colSpan={5}
                     className="h-24 text-center text-muted-foreground"
                   >
-                    Loading admin profiles...
+                    Loading admins...
                   </TableCell>
                 </TableRow>
               ) : profiles.length === 0 ? (
@@ -398,13 +349,15 @@ export default function AccessPage() {
                     colSpan={5}
                     className="h-24 text-center text-muted-foreground"
                   >
-                    No admin profiles found.
+                    No admins found.
                   </TableCell>
                 </TableRow>
               ) : (
                 profiles.map((profile) => {
                   const name = profile.display_name || profile.email;
                   const initials = getInitials(name);
+                  const isCurrentUser = profile.id === currentUserId;
+
                   return (
                     <TableRow key={profile.id} className="border-border/50">
                       <TableCell>
@@ -424,17 +377,8 @@ export default function AccessPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant={
-                            profile.role === "admin" ? "default" : "secondary"
-                          }
-                          className={
-                            profile.role === "admin"
-                              ? "bg-primary text-primary-foreground hover:bg-primary/80"
-                              : ""
-                          }
-                        >
-                          {profile.role}
+                        <Badge className="bg-primary text-primary-foreground hover:bg-primary/80">
+                          {isCurrentUser ? "current admin" : "admin"}
                         </Badge>
                       </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">
@@ -446,13 +390,14 @@ export default function AccessPage() {
                       <TableCell className="text-right">
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="destructive"
                           size="sm"
-                          onClick={() => handleEdit(profile)}
+                          onClick={() => handleDelete(profile)}
                           className="rounded-none text-xs uppercase tracking-[0.2em]"
+                          disabled={deletingId === profile.id || isCurrentUser}
                         >
-                          <Shield className="mr-2 size-4" />
-                          Edit
+                          <Trash2 className="mr-2 size-4" />
+                          {deletingId === profile.id ? "Deleting..." : "Delete"}
                         </Button>
                       </TableCell>
                     </TableRow>
