@@ -17,19 +17,43 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Check admin profile
-      const { data: profile } = await supabase
+      /*
+       * The error is captured, not discarded.
+       *
+       * admin_profiles is behind RLS, so a policy that does not match and
+       * a row that does not exist produce the same null — and the old code
+       * treated both as "not an admin" and signed the person out. When the
+       * cause is actually a policy problem that is a locked door with no
+       * sign on it.
+       *
+       * maybeSingle rather than single: single() treats zero rows as an
+       * error, which is exactly the case that needs telling apart.
+       */
+      const { data: profile, error: profileError } = await supabase
         .from('admin_profiles')
         .select('role')
         .eq('id', session.user.id)
-        .single();
+        .maybeSingle();
 
-      if (!profile || (profile.role !== 'admin' && profile.role !== 'moderator')) {
-        if (profile && profile.role === 'pending') {
+      if (profileError) {
+        console.error('[AuthGuard] could not read admin_profiles:', profileError.message);
+        router.push(`/login?error=${encodeURIComponent(profileError.message)}`);
+        return;
+      }
+
+      if (!profile) {
+        console.warn('[AuthGuard] no admin row for', session.user.id);
+        await supabase.auth.signOut();
+        router.push("/login?error=no-admin-row");
+        return;
+      }
+
+      if (profile.role !== 'admin' && profile.role !== 'moderator') {
+        if (profile.role === 'pending') {
           router.push("/setup");
           return;
         }
-        
+
         await supabase.auth.signOut();
         router.push("/login?error=unauthorized");
         return;

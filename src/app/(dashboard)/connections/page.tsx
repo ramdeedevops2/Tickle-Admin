@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import Link from "next/link";
+import { adminTable } from "@/lib/adminFetch";
+import { DataToolbar } from "@/components/DataToolbar";
+import { RemoveRow } from "@/components/RemoveRow";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -15,7 +18,15 @@ type MatchRow = {
   user2_id: string;
   last_message_at: string;
   created_at: string;
+  /** Null once someone has spoken. A pending match expires in 72 hours. */
+  expires_at: string | null;
 };
+
+function hoursLeft(expiresAt: string | null): number | null {
+  if (!expiresAt) return null;
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  return ms <= 0 ? 0 : Math.floor(ms / 3_600_000);
+}
 
 type MessageCountRow = {
   match_id: string;
@@ -61,9 +72,10 @@ function getInitials(profile: ProfileRow | null, fallback: string) {
 }
 
 export default function ConnectionsPage() {
-  const supabase = useMemo(() => createClient(), []);
   const [matches, setMatches] = useState<MatchView[]>([]);
   const [query, setQuery] = useState("");
+  const [facets, setFacets] = useState<Record<string, string>>({});
+  const [sort, setSort] = useState("recent");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,20 +83,22 @@ export default function ConnectionsPage() {
     setLoading(true);
     setError(null);
 
-    const { data: matchData, error: matchError } = await supabase
-      .from("matches")
-      .select("id, user1_id, user2_id, last_message_at, created_at")
-      .order("last_message_at", { ascending: false })
-      .limit(100);
+    // Through the panel's route: RLS scopes matches and messages to the
+    // people in them, which for an admin means an empty page.
+    const { data: matchData, error: matchError } = await adminTable<MatchRow>("matches", {
+      select: "id, user1_id, user2_id, last_message_at, created_at, expires_at",
+      order: "last_message_at",
+      limit: 100,
+    });
 
     if (matchError) {
-      setError(matchError.message);
+      setError(matchError);
       setMatches([]);
       setLoading(false);
       return;
     }
 
-    const rows = (matchData ?? []) as MatchRow[];
+    const rows = matchData ?? [];
     const userIds = Array.from(
       new Set(rows.flatMap((match) => [match.user1_id, match.user2_id])),
     );
@@ -92,21 +106,22 @@ export default function ConnectionsPage() {
 
     const [{ data: profileData }, { data: messageData }] = await Promise.all([
       userIds.length
-        ? supabase
-            .from("profiles")
-            .select("user_id, name, email, photos")
-            .in("user_id", userIds)
-        : Promise.resolve({ data: [] }),
+        ? adminTable<ProfileRow>("profiles", {
+            select: "user_id, name, email, photos",
+            in: ["user_id", userIds],
+          })
+        : Promise.resolve({ data: [] as ProfileRow[] }),
       matchIds.length
-        ? supabase.from("messages").select("match_id").in("match_id", matchIds)
-        : Promise.resolve({ data: [] }),
+        ? adminTable<{ match_id: string }>("messages", {
+            select: "match_id",
+            in: ["match_id", matchIds],
+            limit: 5000,
+          })
+        : Promise.resolve({ data: [] as { match_id: string }[] }),
     ]);
 
     const profilesByUserId = new Map(
-      ((profileData ?? []) as ProfileRow[]).map((profile) => [
-        profile.user_id,
-        profile,
-      ]),
+      (profileData ?? []).map((profile) => [profile.user_id, profile]),
     );
     const messageCounts = ((messageData ?? []) as MessageCountRow[]).reduce(
       (accumulator, message) => {
@@ -128,7 +143,7 @@ export default function ConnectionsPage() {
       })),
     );
     setLoading(false);
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(loadConnections);
@@ -136,19 +151,39 @@ export default function ConnectionsPage() {
 
   const filteredMatches = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return matches;
 
-    return matches.filter((match) =>
-      [
-        getName(match.user1, match.user1_id),
-        getName(match.user2, match.user2_id),
-        match.id,
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalized),
-    );
-  }, [matches, query]);
+    const rows = matches.filter((match) => {
+      if (normalized) {
+        const haystack = [
+          getName(match.user1, match.user1_id),
+          getName(match.user2, match.user2_id),
+          match.id,
+        ]
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(normalized)) return false;
+      }
+
+      // A match with no messages is the one worth looking at: it is what
+      // the whole funnel is trying to reduce.
+      const activity = facets.activity ?? "all";
+      if (activity === "talking" && match.messageCount === 0) return false;
+      if (activity === "silent" && match.messageCount > 0) return false;
+
+      return true;
+    });
+
+    return [...rows].sort((a, b) => {
+      if (sort === "messages") return b.messageCount - a.messageCount;
+      if (sort === "created") {
+        return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
+      }
+      return (
+        new Date(b.last_message_at ?? 0).getTime() -
+        new Date(a.last_message_at ?? 0).getTime()
+      );
+    });
+  }, [matches, query, facets, sort]);
 
   const stats = useMemo(() => {
     const messaged = matches.filter((match) => match.messageCount > 0).length;
@@ -165,6 +200,14 @@ export default function ConnectionsPage() {
       avgMessages: matches.length
         ? (totalMessages / matches.length).toFixed(1)
         : "0.0",
+      /*
+       * Matches still on the clock.
+       *
+       * The number worth watching alongside it is the message rate: if most
+       * matches expire without a word, 72 hours is either too short or the
+       * reminders are not landing.
+       */
+      pending: matches.filter((match) => match.expires_at !== null).length,
     };
   }, [matches]);
 
@@ -177,30 +220,38 @@ export default function ConnectionsPage() {
             Matches from public.matches with message counts.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative w-64">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              className="rounded-none border border-border bg-transparent pl-8"
-              placeholder="Search matches"
-            />
-          </div>
-          <Button
-            variant="outline"
-            onClick={loadConnections}
-            disabled={loading}
-            className="rounded-none border-border/50 text-xs uppercase tracking-[0.2em]"
-          >
-            <RefreshCw className="mr-2 size-4" />
-            Refresh
-          </Button>
-        </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <DataToolbar
+        query={query}
+        onQuery={setQuery}
+        searchPlaceholder="Search by either name, or match id"
+        filters={[
+          {
+            id: "activity",
+            label: "Activity",
+            options: [
+              { value: "talking", label: "Has messages" },
+              { value: "silent", label: "Never messaged" },
+            ],
+          },
+        ]}
+        values={facets}
+        onFilter={(id, value) => setFacets((current) => ({ ...current, [id]: value }))}
+        sorts={[
+          { id: "recent", label: "Recently active" },
+          { id: "created", label: "Newest match" },
+          { id: "messages", label: "Most messages" },
+        ]}
+        sort={sort}
+        onSort={setSort}
+        onRefresh={loadConnections}
+        loading={loading}
+        showing={filteredMatches.length}
+        total={matches.length}
+      />
+
+      <div className="grid gap-4 md:grid-cols-4">
         <Card className="border-border/50 bg-card">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -229,6 +280,16 @@ export default function ConnectionsPage() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold">{stats.avgMessages}</div>
+          </CardContent>
+        </Card>
+        <Card className="border-border/50 bg-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Pending (On The Clock)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold">{stats.pending}</div>
           </CardContent>
         </Card>
       </div>
@@ -284,18 +345,41 @@ export default function ConnectionsPage() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    <Badge variant="secondary" className="gap-1">
-                      <Heart className="size-3" />
-                      Match
-                    </Badge>
+                    {match.expires_at ? (
+                      <Badge
+                        variant="outline"
+                        className={`gap-1 rounded-none text-[10px] uppercase tracking-[0.2em] ${
+                          (hoursLeft(match.expires_at) ?? 0) <= 6
+                            ? "border-destructive/30 bg-destructive/10 text-destructive"
+                            : "border-orange-500/30 bg-orange-500/10 text-orange-600"
+                        }`}
+                      >
+                        {hoursLeft(match.expires_at)}h left
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="gap-1">
+                        <Heart className="size-3" />
+                        Match
+                      </Badge>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
                       className="border-border hover:bg-muted"
+                      render={<Link href={`/members/${match.user1_id}`} />}
                     >
                       <SplitSquareHorizontal className="mr-2 h-4 w-4" />
                       View
                     </Button>
+                    {/* Unmatching removes the pair and the thread with it.
+                        There is no hidden state for a match, so this is
+                        the only form the action can take. */}
+                    <RemoveRow
+                      table="matches"
+                      id={match.id}
+                      label="Unmatch these two"
+                      onDone={loadConnections}
+                    />
                   </div>
                 </div>
               ))}

@@ -1,7 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { DataToolbar } from "@/components/DataToolbar";
+import { useSearchParams } from "next/navigation";
+import { adminTable } from "@/lib/adminFetch";
+import {
+  profileStrength,
+  STRENGTH_COLUMNS,
+  type StrengthFields,
+} from "@/lib/profileStrength";
 import {
   Table,
   TableBody,
@@ -14,16 +21,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Eye, RefreshCw } from "lucide-react";
+import { Eye, Filter, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
-type ProfileRow = {
+type ProfileRow = StrengthFields & {
   id: string;
   user_id: string;
   name: string | null;
   email: string | null;
-  photos: string[] | null;
-  bio: string | null;
   age: number | null;
   gender: string | null;
   created_at: string;
@@ -33,7 +38,41 @@ type ProfileRow = {
   is_online: boolean | null;
   last_active: string | null;
   interested_in: string | null;
+  suspended_at: string | null;
+  suspended_reason: string | null;
+  city: string | null;
+  face_verified_at: string | null;
+  published_at: string | null;
 };
+
+/**
+ * The command palette links straight to a filtered list — "Photo audit" and
+ * "Weak profiles" are questions an admin asks often enough that they deserve
+ * a URL rather than a sequence of clicks.
+ */
+const FILTERS = {
+  "no-photos": {
+    label: "No photos",
+    description: "Accounts with no photo, or only one.",
+    test: (member: ProfileRow) => (member.photos?.length ?? 0) < 2,
+  },
+  weak: {
+    label: "Weak profiles",
+    description: "Accounts under 40% complete.",
+    test: (member: ProfileRow) => profileStrength(member) < 40,
+  },
+  suspended: {
+    label: "Suspended",
+    description: "Accounts locked out from the moderation queue.",
+    test: (member: ProfileRow) => member.suspended_at != null,
+  },
+} as const;
+
+type FilterKey = keyof typeof FILTERS;
+
+function isFilterKey(value: string | null): value is FilterKey {
+  return value !== null && value in FILTERS;
+}
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -58,31 +97,50 @@ function getInitials(value: string | null) {
 }
 
 export default function MembersPage() {
-  const supabase = useMemo(() => createClient(), []);
+  // useSearchParams bails out of prerendering up to the nearest boundary, and
+  // a production build fails outright without one.
+  return (
+    <Suspense
+      fallback={<div className="py-16 text-center text-muted-foreground">Loading members...</div>}
+    >
+      <MembersView />
+    </Suspense>
+  );
+}
+
+function MembersView() {
+  const searchParams = useSearchParams();
   const [members, setMembers] = useState<ProfileRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const filterParam = searchParams.get("filter");
+  const filter = isFilterKey(filterParam) ? filterParam : null;
 
   const loadMembers = useCallback(async () => {
     setLoading(true);
     setError(null);
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select(
-        "id, user_id, name, email, photos, bio, age, gender, created_at, search_radius, latitude, longitude, is_online, last_active, interested_in",
-      )
-      .order("created_at", { ascending: false });
+    // Read through the panel's own route rather than straight from Supabase:
+    // with RLS on, profiles answers a signed-in admin with their own row and
+    // nothing else, so a direct query here returns an empty table.
+    const { data, error } = await adminTable<ProfileRow>("profiles", {
+      select:
+        "id, user_id, name, email, age, gender, created_at, search_radius, latitude, longitude, is_online, last_active, interested_in, suspended_at, suspended_reason, city, face_verified_at, published_at, " +
+        STRENGTH_COLUMNS,
+      order: "created_at",
+      limit: 5000,
+    });
 
     if (error) {
-      setError(error.message);
+      setError(error);
       setMembers([]);
     } else {
-      setMembers((data ?? []) as ProfileRow[]);
+      setMembers(data ?? []);
     }
 
     setLoading(false);
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(loadMembers);
@@ -101,25 +159,131 @@ export default function MembersPage() {
     };
   }, [members]);
 
+  // Stats stay over the whole population; only the table narrows. A filtered
+  // view that also rewrites "Total Profiles" is how an admin ends up
+  // reporting the size of a subset as the size of the app.
+  const [query, setQuery] = useState("");
+  const [facets, setFacets] = useState<Record<string, string>>({});
+  const [sort, setSort] = useState("recent");
+
+  const setFacet = useCallback((id: string, value: string) => {
+    setFacets((current) => ({ ...current, [id]: value }));
+  }, []);
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+
+    const rows = members.filter((member) => {
+      if (filter && !FILTERS[filter].test(member)) return false;
+
+      if (q) {
+        const haystack = [member.name, member.email, member.city, member.user_id]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+
+      const status = facets.status ?? "all";
+      if (status === "suspended" && !member.suspended_at) return false;
+      if (status === "active" && member.suspended_at) return false;
+      if (status === "online" && !member.is_online) return false;
+
+      const verified = facets.verified ?? "all";
+      if (verified === "face" && !member.face_verified_at) return false;
+      if (verified === "unverified" && member.face_verified_at) return false;
+
+      const published = facets.published ?? "all";
+      if (published === "live" && !member.published_at) return false;
+      if (published === "draft" && member.published_at) return false;
+
+      return true;
+    });
+
+    // Sorted on a copy: the loaded list is the order the server sent and
+    // other things read it.
+    return [...rows].sort((a, b) => {
+      if (sort === "name") return (a.name ?? "").localeCompare(b.name ?? "");
+      if (sort === "strength") return profileStrength(b) - profileStrength(a);
+      return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
+    });
+  }, [members, filter, query, facets, sort]);
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold tracking-tight">Members</h2>
           <p className="text-muted-foreground">
-            Profiles from the public.profiles table.
+            {filter ? FILTERS[filter].description : "Profiles from the public.profiles table."}
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={loadMembers}
-          className="rounded-none border-border/50 text-xs uppercase tracking-[0.2em]"
-          disabled={loading}
-        >
-          <RefreshCw className="mr-2 size-4" />
-          Refresh
-        </Button>
       </div>
+
+      <DataToolbar
+        query={query}
+        onQuery={setQuery}
+        searchPlaceholder="Search name, email, city or id"
+        filters={[
+          {
+            id: "status",
+            label: "Status",
+            options: [
+              { value: "active", label: "Active" },
+              { value: "suspended", label: "Suspended" },
+              { value: "online", label: "Online" },
+            ],
+          },
+          {
+            id: "verified",
+            label: "Verified",
+            options: [
+              { value: "face", label: "Face" },
+              { value: "unverified", label: "Not verified" },
+            ],
+          },
+          {
+            id: "published",
+            label: "Discovery",
+            options: [
+              { value: "live", label: "Live" },
+              { value: "draft", label: "Hidden" },
+            ],
+          },
+        ]}
+        values={facets}
+        onFilter={setFacet}
+        sorts={[
+          { id: "recent", label: "Newest first" },
+          { id: "name", label: "Name" },
+          { id: "strength", label: "Profile strength" },
+        ]}
+        sort={sort}
+        onSort={setSort}
+        onRefresh={loadMembers}
+        loading={loading}
+        showing={visible.length}
+        total={members.length}
+      />
+
+      {filter && (
+        <div className="flex items-center gap-3 border border-border/50 bg-muted/40 px-4 py-3">
+          <Filter className="size-4 shrink-0 text-muted-foreground" />
+          <span className="text-sm">
+            <span className="font-medium">{FILTERS[filter].label}</span>
+            <span className="text-muted-foreground">
+              {" — "}
+              {visible.length} of {members.length} accounts
+            </span>
+          </span>
+          <Link
+            href="/members"
+            className="ml-auto text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Clear
+          </Link>
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="border-border/50 bg-card">
@@ -185,7 +349,7 @@ export default function MembersPage() {
                   {error}
                 </TableCell>
               </TableRow>
-            ) : members.length === 0 ? (
+            ) : visible.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={6}
@@ -195,7 +359,7 @@ export default function MembersPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              members.map((member) => (
+              visible.map((member) => (
                 <TableRow
                   key={member.id}
                   className="cursor-pointer border-border/50 hover:bg-muted/40"
@@ -229,16 +393,29 @@ export default function MembersPage() {
                     {member.interested_in || "everyone"}
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant={member.is_online ? "default" : "secondary"}
-                      className={
-                        member.is_online
-                          ? "bg-primary text-primary-foreground hover:bg-primary/80"
-                          : ""
-                      }
-                    >
-                      {member.is_online ? "Online" : "Offline"}
-                    </Badge>
+                    {/* Suspended outranks online: someone locked out may still
+                        have an open socket, and "Online" would be the least
+                        useful true thing to say about them. */}
+                    {member.suspended_at ? (
+                      <Badge
+                        variant="outline"
+                        className="border-destructive/30 bg-destructive/10 text-destructive"
+                        title={member.suspended_reason || undefined}
+                      >
+                        Suspended
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant={member.is_online ? "default" : "secondary"}
+                        className={
+                          member.is_online
+                            ? "bg-primary text-primary-foreground hover:bg-primary/80"
+                            : ""
+                        }
+                      >
+                        {member.is_online ? "Online" : "Offline"}
+                      </Badge>
+                    )}
                   </TableCell>
                   <TableCell className="text-right text-xs text-muted-foreground">
                     <Link

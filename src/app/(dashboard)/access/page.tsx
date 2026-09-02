@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { adminTable } from "@/lib/adminFetch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,6 +64,27 @@ function getInitials(nameOrEmail: string) {
 }
 
 export default function AccessPage() {
+  // useSearchParams bails out of prerendering up to the nearest boundary, and
+  // a production build fails outright without one.
+  return (
+    <Suspense
+      fallback={<div className="py-16 text-center text-muted-foreground">Loading admins...</div>}
+    >
+      <AccessView />
+    </Suspense>
+  );
+}
+
+function AccessView() {
+  const searchParams = useSearchParams();
+
+  // The palette links here as /access?new=1, which should land with the
+  // cursor in the box rather than merely on the right page.
+  const compose = searchParams.get("new") === "1";
+  useEffect(() => {
+    if (compose) document.getElementById("admin-email")?.focus();
+  }, [compose]);
+
   const supabase = useMemo(() => createClient(), []);
   const [profiles, setProfiles] = useState<AdminProfile[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -81,17 +104,20 @@ export default function AccessPage() {
     } = await supabase.auth.getUser();
     setCurrentUserId(user?.id ?? null);
 
-    const { data, error } = await supabase
-      .from("admin_profiles")
-      .select("id, email, role, display_name, avatar_url, created_at, updated_at")
-      .eq("role", "admin")
-      .order("updated_at", { ascending: false });
+    // Through the panel's route: RLS on admin_profiles scopes reads to your
+    // own row, which is exactly what AuthGuard needs and exactly wrong for a
+    // page whose job is listing everyone else.
+    const { data, error } = await adminTable<AdminProfile>("admin_profiles", {
+      select: "id, email, role, display_name, avatar_url, created_at, updated_at",
+      eq: ["role", "admin"],
+      order: "updated_at",
+    });
 
     if (error) {
-      setError(error.message);
+      setError(error);
       setProfiles([]);
     } else {
-      setProfiles((data ?? []) as AdminProfile[]);
+      setProfiles(data ?? []);
     }
 
     setLoading(false);

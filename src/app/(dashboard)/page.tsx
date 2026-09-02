@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { adminCounts, adminTable } from "@/lib/adminFetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Activity, Heart, MessageSquare, RefreshCw, Users } from "lucide-react";
 import ReactECharts from "echarts-for-react";
@@ -80,7 +80,6 @@ function shortId(value: string) {
 }
 
 export default function PulseDashboard() {
-  const supabase = useMemo(() => createClient(), []);
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
   const [matches, setMatches] = useState<MatchRow[]>([]);
   const [messagesCount, setMessagesCount] = useState(0);
@@ -95,62 +94,65 @@ export default function PulseDashboard() {
     setLoading(true);
     setError(null);
 
+    /*
+     * Everything reads through the panel's own route now.
+     *
+     * With RLS on, a signed-in admin querying these tables directly sees
+     * their own rows and nothing else, so this page rendered six zeroes and
+     * an empty feed. The route uses the service role behind an admin check.
+     *
+     * The four totals are counts rather than fetches — the old code pulled
+     * every message row into the browser to call .length on it.
+     */
     const [
+      countsResult,
       profilesResult,
       matchesResult,
-      messagesResult,
-      likesResult,
-      passesResult,
-      storiesResult,
       recentMessagesResult,
       recentMatchesResult,
       recentLikesResult,
       recentPassesResult,
       recentStoriesResult,
     ] = await Promise.all([
-      supabase.from("profiles").select("created_at, is_online"),
-      supabase.from("matches").select("created_at"),
-      supabase.from("messages").select("id", { count: "exact", head: true }),
-      supabase.from("likes").select("id", { count: "exact", head: true }),
-      supabase.from("passes").select("id", { count: "exact", head: true }),
-      supabase
-        .from("stories")
-        .select("id", { count: "exact", head: true })
-        .gt("expires_at", new Date().toISOString()),
-      supabase
-        .from("messages")
-        .select("id, match_id, sender_id, created_at")
-        .order("created_at", { ascending: false })
-        .limit(3),
-      supabase
-        .from("matches")
-        .select("id, user1_id, user2_id, created_at")
-        .order("created_at", { ascending: false })
-        .limit(3),
-      supabase
-        .from("likes")
-        .select("id, liker_id, liked_id, created_at")
-        .order("created_at", { ascending: false })
-        .limit(3),
-      supabase
-        .from("passes")
-        .select("id, passer_id, passed_id, created_at")
-        .order("created_at", { ascending: false })
-        .limit(3),
-      supabase
-        .from("stories")
-        .select("id, user_id, created_at")
-        .order("created_at", { ascending: false })
-        .limit(3),
+      adminCounts([
+        "messages",
+        "likes",
+        "passes",
+        { table: "dailies", gt: ["expires_at", new Date().toISOString()] },
+      ]),
+      adminTable<ProfileRow>("profiles", { select: "created_at, is_online", limit: 5000 }),
+      adminTable<MatchRow>("matches", { select: "created_at", limit: 5000 }),
+      adminTable<RecentMessageRow>("messages", {
+        select: "id, match_id, sender_id, created_at",
+        order: "created_at",
+        limit: 3,
+      }),
+      adminTable<RecentMatchRow>("matches", {
+        select: "id, user1_id, user2_id, created_at",
+        order: "created_at",
+        limit: 3,
+      }),
+      adminTable<RecentLikeRow>("likes", {
+        select: "id, liker_id, liked_id, created_at",
+        order: "created_at",
+        limit: 3,
+      }),
+      adminTable<RecentPassRow>("passes", {
+        select: "id, passer_id, passed_id, created_at",
+        order: "created_at",
+        limit: 3,
+      }),
+      adminTable<RecentStoryRow>("dailies", {
+        select: "id, user_id, created_at",
+        order: "created_at",
+        limit: 3,
+      }),
     ]);
 
     const firstError =
+      countsResult.error ??
       profilesResult.error ??
       matchesResult.error ??
-      messagesResult.error ??
-      likesResult.error ??
-      passesResult.error ??
-      storiesResult.error ??
       recentMessagesResult.error ??
       recentMatchesResult.error ??
       recentLikesResult.error ??
@@ -158,17 +160,19 @@ export default function PulseDashboard() {
       recentStoriesResult.error;
 
     if (firstError) {
-      setError(firstError.message);
+      setError(firstError);
       setLoading(false);
       return;
     }
 
-    setProfiles((profilesResult.data ?? []) as ProfileRow[]);
-    setMatches((matchesResult.data ?? []) as MatchRow[]);
-    setMessagesCount(messagesResult.count ?? 0);
-    setLikesCount(likesResult.count ?? 0);
-    setPassesCount(passesResult.count ?? 0);
-    setStoriesCount(storiesResult.count ?? 0);
+    const counts = countsResult.data ?? {};
+
+    setProfiles(profilesResult.data ?? []);
+    setMatches(matchesResult.data ?? []);
+    setMessagesCount(counts.messages ?? 0);
+    setLikesCount(counts.likes ?? 0);
+    setPassesCount(counts.passes ?? 0);
+    setStoriesCount(counts.dailies ?? 0);
 
     const recentMessages = (
       (recentMessagesResult.data ?? []) as RecentMessageRow[]
@@ -206,7 +210,7 @@ export default function PulseDashboard() {
       (recentStoriesResult.data ?? []) as RecentStoryRow[]
     ).map((story) => ({
       id: `story-${story.id}`,
-      label: "Story",
+      label: "Daily",
       detail: `user ${shortId(story.user_id)}`,
       created_at: story.created_at,
     }));
@@ -226,7 +230,7 @@ export default function PulseDashboard() {
         .slice(0, 10),
     );
     setLoading(false);
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(loadPulse);
@@ -403,7 +407,7 @@ export default function PulseDashboard() {
           <CardContent>
             <div className="text-2xl font-bold">{stats.messages}</div>
             <p className="mt-1 text-xs text-muted-foreground">
-              {stats.stories} active stories
+              {stats.stories} live dailies
             </p>
           </CardContent>
         </Card>

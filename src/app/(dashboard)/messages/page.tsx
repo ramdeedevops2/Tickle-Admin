@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { DataToolbar } from "@/components/DataToolbar";
+import { RemoveRow } from "@/components/RemoveRow";
+import { adminTable } from "@/lib/adminFetch";
 import {
   Table,
   TableBody,
@@ -51,41 +53,42 @@ function shortId(value: string) {
 }
 
 export default function MessagesPage() {
-  const supabase = useMemo(() => createClient(), []);
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [facets, setFacets] = useState<Record<string, string>>({});
 
   const loadMessages = useCallback(async () => {
     setLoading(true);
     setError(null);
 
-    const { data, error } = await supabase
-      .from("messages")
-      .select("id, match_id, sender_id, content, read, created_at")
-      .order("created_at", { ascending: false })
-      .limit(100);
+    // Through the panel's route. RLS scopes messages to the two people in
+    // the conversation, which is right for the app and blank for a panel.
+    const { data, error } = await adminTable<MessageRow>("messages", {
+      select: "id, match_id, sender_id, content, read, created_at",
+      order: "created_at",
+      limit: 100,
+    });
 
     if (error) {
-      setError(error.message);
+      setError(error);
       setMessages([]);
       setLoading(false);
       return;
     }
 
-    const rows = (data ?? []) as MessageRow[];
+    const rows = data ?? [];
     const senderIds = Array.from(new Set(rows.map((message) => message.sender_id)));
     const { data: profileData } = senderIds.length
-      ? await supabase
-          .from("profiles")
-          .select("user_id, name, email")
-          .in("user_id", senderIds)
-      : { data: [] };
+      ? await adminTable<ProfileRow>("profiles", {
+          select: "user_id, name, email",
+          in: ["user_id", senderIds],
+        })
+      : { data: [] as ProfileRow[] };
+
     const profilesByUserId = new Map(
-      ((profileData ?? []) as ProfileRow[]).map((profile) => [
-        profile.user_id,
-        profile,
-      ]),
+      (profileData ?? []).map((profile) => [profile.user_id, profile]),
     );
 
     setMessages(
@@ -95,11 +98,37 @@ export default function MessagesPage() {
       })),
     );
     setLoading(false);
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(loadMessages);
   }, [loadMessages]);
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+
+    return messages.filter((message) => {
+      if (q) {
+        const haystack = [
+          message.content,
+          message.sender?.name,
+          message.sender?.email,
+          message.id,
+          message.match_id,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+
+      const read = facets.read ?? "all";
+      if (read === "unread" && message.read) return false;
+      if (read === "read" && !message.read) return false;
+
+      return true;
+    });
+  }, [messages, query, facets]);
 
   const stats = useMemo(() => {
     const unread = messages.filter((message) => !message.read).length;
@@ -172,13 +201,14 @@ export default function MessagesPage() {
               <TableHead>Sender</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Sent</TableHead>
+              <TableHead className="w-12" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={6}
                   className="h-24 text-center text-muted-foreground"
                 >
                   Loading messages...
@@ -187,7 +217,7 @@ export default function MessagesPage() {
             ) : error ? (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={6}
                   className="h-24 text-center text-destructive"
                 >
                   {error}
@@ -196,14 +226,14 @@ export default function MessagesPage() {
             ) : messages.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={5}
+                  colSpan={6}
                   className="h-24 text-center text-muted-foreground"
                 >
                   No messages found.
                 </TableCell>
               </TableRow>
             ) : (
-              messages.map((message) => (
+              visible.map((message) => (
                 <TableRow key={message.id} className="border-border/50">
                   <TableCell>
                     <div className="space-y-1">

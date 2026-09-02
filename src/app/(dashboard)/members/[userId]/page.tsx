@@ -3,6 +3,8 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { RoseWallet } from "@/components/RoseWallet";
+import { MemberActions } from "@/components/MemberActions";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -35,6 +37,11 @@ type Profile = {
   is_online: boolean | null;
   last_active: string | null;
   interested_in: string | null;
+  suspended_at: string | null;
+  face_verified_at: string | null;
+  phone_verified_at: string | null;
+  premium_until: string | null;
+  published_at: string | null;
 };
 
 type RelatedProfile = {
@@ -384,6 +391,18 @@ export default function MemberProfilePage() {
         </Button>
       </div>
 
+      <MemberActions
+        userId={profile.user_id}
+        state={{
+          suspended_at: profile.suspended_at ?? null,
+          face_verified_at: profile.face_verified_at ?? null,
+          phone_verified_at: profile.phone_verified_at ?? null,
+          premium_until: profile.premium_until ?? null,
+          published_at: profile.published_at ?? null,
+        }}
+        onDone={loadMember}
+      />
+
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard title="Matches" value={detail.matches.length} icon={Heart} />
         <StatCard
@@ -402,6 +421,8 @@ export default function MemberProfilePage() {
           icon={X}
         />
       </div>
+
+      <RoseWallet userId={userId} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-8">
@@ -642,28 +663,6 @@ export default function MemberProfilePage() {
             </CardContent>
           </Card>
 
-          <Card className="border-border/50 bg-card">
-            <CardHeader>
-              <CardTitle>Technical</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3 font-mono text-xs text-muted-foreground">
-              <div>User ID: {profile.user_id}</div>
-              <div>Profile Row ID: {profile.id}</div>
-              <div>Auth Created: {formatDateTime(authUser?.created_at)}</div>
-              <div>Last Sign In: {formatDateTime(authUser?.last_sign_in_at)}</div>
-              <details className="space-y-2">
-                <summary className="cursor-pointer text-foreground">
-                  Auth metadata
-                </summary>
-                <pre className="mt-2 whitespace-pre-wrap break-words">
-                  {raw({
-                    app_metadata: authUser?.app_metadata,
-                    user_metadata: authUser?.user_metadata,
-                  })}
-                </pre>
-              </details>
-            </CardContent>
-          </Card>
         </aside>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { AppSidebar } from "@/components/sidebar/AppSidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import AuthGuard from "@/components/AuthGuard";
+import { CommandPalette } from "@/components/CommandPalette";
 
 export default function DashboardLayout({
   children,

@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { DataToolbar } from "@/components/DataToolbar";
+import { adminTable } from "@/lib/adminFetch";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -43,45 +44,52 @@ function formatCoordinate(value: number | null) {
 }
 
 export default function GeoPage() {
-  const supabase = useMemo(() => createClient(), []);
   const [profiles, setProfiles] = useState<ProfileLocationRow[]>([]);
   const [encounters, setEncounters] = useState<EncounterRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+  const [facets, setFacets] = useState<Record<string, string>>({});
 
   const loadGeo = useCallback(async () => {
     setLoading(true);
     setError(null);
 
+    // nearby_encounters is scoped to your own rows by RLS — it is a log of
+    // where you have been, and one person's location history is exactly the
+    // thing that must not be readable by anyone else's client.
     const [{ data: profileData, error: profileError }, { data: encounterData }] =
       await Promise.all([
-        supabase
-          .from("profiles")
-          .select(
+        adminTable<ProfileLocationRow>("profiles", {
+          select:
             "id, user_id, name, email, latitude, longitude, search_radius, is_online, last_active",
-          )
-          .not("latitude", "is", null)
-          .not("longitude", "is", null)
-          .order("last_active", { ascending: false })
-          .limit(100),
-        supabase
-          .from("nearby_encounters")
-          .select("user_id, encountered_user_id, created_at")
-          .order("created_at", { ascending: false })
-          .limit(500),
+          order: "last_active",
+          limit: 100,
+        }),
+        adminTable<EncounterRow>("nearby_encounters", {
+          select: "user_id, encountered_user_id, created_at",
+          order: "created_at",
+          limit: 500,
+        }),
       ]);
 
     if (profileError) {
-      setError(profileError.message);
+      setError(profileError);
       setProfiles([]);
       setEncounters([]);
     } else {
-      setProfiles((profileData ?? []) as ProfileLocationRow[]);
-      setEncounters((encounterData ?? []) as EncounterRow[]);
+      // The null-location filter moved here: the route takes one equality
+      // filter, and "has coordinates" is cheap to apply on 100 rows.
+      setProfiles(
+        (profileData ?? []).filter(
+          (row) => row.latitude != null && row.longitude != null,
+        ),
+      );
+      setEncounters(encounterData ?? []);
     }
 
     setLoading(false);
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     void Promise.resolve().then(loadGeo);
@@ -114,6 +122,28 @@ export default function GeoPage() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 8);
   }, [encounters]);
+
+  // Only the list narrows. The counts above it stay over everyone, so a
+  // filtered view never reports a subset as the whole population.
+  const visibleProfiles = useMemo(() => {
+    const q = query.trim().toLowerCase();
+
+    return profiles.filter((profile) => {
+      if (q) {
+        const haystack = [profile.name, profile.email, profile.user_id]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+
+      const presence = facets.presence ?? "all";
+      if (presence === "online" && !profile.is_online) return false;
+      if (presence === "offline" && profile.is_online) return false;
+
+      return true;
+    });
+  }, [profiles, query, facets]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">
@@ -198,7 +228,7 @@ export default function GeoPage() {
               </div>
             ) : (
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {profiles.map((profile) => (
+                {visibleProfiles.map((profile) => (
                   <div
                     key={profile.id}
                     className="border border-border/50 bg-background/80 p-4"
