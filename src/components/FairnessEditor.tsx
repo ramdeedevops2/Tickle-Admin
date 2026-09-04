@@ -1,9 +1,9 @@
 "use client";
-
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { adminFetch } from "@/lib/adminFetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useLoadOnMount } from "@/lib/useLoadOnMount";
 
 /**
  * Pass cooldowns and exposure caps.
@@ -106,7 +106,7 @@ export function FairnessEditor() {
     const { data, error } = await adminFetch<Payload>("/api/fairness");
 
     if (error || !data) {
-      setError(error ?? "Failed to load fairness settings.");
+      setError(error ??"Failed to load fairness settings.");
       return;
     }
 
@@ -116,9 +116,7 @@ export function FairnessEditor() {
     );
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useLoadOnMount(load);
 
   const save = useCallback(async () => {
     setSaving(true);
@@ -145,34 +143,31 @@ export function FairnessEditor() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-end justify-between border-b border-border/50 pb-2">
-        <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-          Fairness &amp; Cooldowns
-        </h2>
+      <div className="flex items-end justify-between border-b border-foreground/[0.06] pb-2">
         <Button
           variant="outline"
           onClick={save}
           disabled={saving}
-          className="h-9 rounded-none border-border/50 text-[10px] uppercase tracking-[0.2em]"
+          className="h-9 border-foreground/[0.06] text-[0.86rem]"
         >
-          {saving ? "Saving" : "Save"}
+          {saving ? "Saving" :"Save"}
         </Button>
       </div>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-[0.92rem] text-destructive">{error}</p>}
 
       {/* The numbers that say whether the settings above are working.
           topTenthShare is the important one: if the top tenth of profiles
           absorb most of the exposure, fairness is losing. */}
-      <div className="grid gap-4 text-xs sm:grid-cols-2 lg:grid-cols-4">
-        <Fact label="Active cooldowns" value={stats.active.toLocaleString()} />
+      <div className="grid gap-4 text-[0.86rem] sm:grid-cols-2 lg:grid-cols-4">
+        <Fact label="People in a waiting period" value={stats.active.toLocaleString()} />
         <Fact
-          label="Passed more than once"
+          label="Passed on more than once"
           value={`${stats.repeat.toLocaleString()} of ${stats.passes.toLocaleString()}`}
         />
-        <Fact label="Permanent passes" value={stats.permanent.toLocaleString()} />
+        <Fact label="Passed on for good" value={stats.permanent.toLocaleString()} />
         <Fact
-          label="Top 10% share of exposure"
+          label="Share of views going to the busiest tenth"
           value={`${stats.topTenthShare}%`}
           warn={stats.topTenthShare > 35}
           note={stats.topTenthShare > 35 ? "Attention is pooling" : undefined}
@@ -182,7 +177,7 @@ export function FairnessEditor() {
       <div className="grid gap-8 md:grid-cols-2">
         {FIELDS.map((f) => (
           <div key={f.key} id={f.anchor} className="group space-y-2 scroll-mt-24">
-            <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground transition-colors group-focus-within:text-foreground">
+            <label className="block text-[0.8rem] font-bold text-muted-foreground transition-colors group-focus-within:text-foreground">
               {f.label}
               <span className="ml-2 font-normal normal-case tracking-normal opacity-60">
                 {f.unit}
@@ -190,14 +185,14 @@ export function FairnessEditor() {
             </label>
 
             <Input
-              value={draft[f.key] ?? ""}
+              value={draft[f.key] ??""}
               onChange={(event) =>
                 setDraft((prev) => ({ ...prev, [f.key]: event.target.value }))
               }
-              className="h-12 rounded-none border-0 border-b border-border/50 bg-transparent px-0 font-mono text-lg focus-visible:border-foreground focus-visible:ring-0"
+              className="h-12 px-3 font-mono text-lg"
             />
 
-            <p className="text-xs text-muted-foreground">{f.hint}</p>
+            <p className="text-[1rem] leading-relaxed text-muted-foreground">{f.hint}</p>
           </div>
         ))}
       </div>
@@ -218,11 +213,11 @@ function Fact({
 }) {
   return (
     <div>
-      <div className={`text-xl font-black tracking-tight ${warn ? "text-destructive" : ""}`}>
+      <div className={`tnum text-[1.3rem] font-normal tracking-tight ${warn ? "text-destructive" :""}`}>
         {value}
       </div>
       <div className="text-muted-foreground">{label}</div>
-      {note && <div className="text-[11px] text-destructive">{note}</div>}
+      {note && <div className="text-[0.8rem] text-destructive">{note}</div>}
     </div>
   );
 }

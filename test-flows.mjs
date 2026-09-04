@@ -58,7 +58,7 @@ async function makeUser(tag) {
   const userId = data.user.id;
   created.push(userId);
 
-  await admin.from('profiles').insert({
+  await admin.from('profiles').upsert({
     user_id: userId,
     name: `Test ${tag}`,
     email,
@@ -69,7 +69,10 @@ async function makeUser(tag) {
     published_at: new Date().toISOString(),
     latitude: 28.6,
     longitude: 77.2,
-  });
+    // A profile row already exists by the time createUser returns —
+    // there is a signup trigger creating a bare one. An insert here
+    // fails on the duplicate key and leaves the row unpopulated.
+  }, { onConflict: 'user_id' });
 
   const client = createClient(url, anonKey, { auth: { persistSession: false } });
   const { error: signInError } = await client.auth.signInWithPassword({ email, password });

@@ -36,7 +36,10 @@ export async function GET(request: NextRequest) {
         .select("*, places(name)")
         .order("created_at", { ascending: false })
         .limit(200),
-      auth.supabase.from("places").select("id, name").order("name").limit(500),
+      // Address comes along so the picker can tell two "Starbucks" apart,
+      // and the ceiling is high because the picker is searchable now — a
+      // truncated list is a venue somebody cannot drop a heart on.
+      auth.supabase.from("places").select("id, name, address").order("name").limit(2000),
       auth.supabase.from("hearts").select("status, extended_count").limit(20000),
     ]);
 

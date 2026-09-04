@@ -22,7 +22,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
        *
        * admin_profiles is behind RLS, so a policy that does not match and
        * a row that does not exist produce the same null — and the old code
-       * treated both as "not an admin" and signed the person out. When the
+       * treated both as"not an admin" and signed the person out. When the
        * cause is actually a policy problem that is a locked door with no
        * sign on it.
        *
@@ -49,11 +49,14 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       }
 
       if (profile.role !== 'admin' && profile.role !== 'moderator') {
-        if (profile.role === 'pending') {
-          router.push("/setup");
-          return;
-        }
-
+        /*
+         * There is no 'pending' path any more.
+         *
+         * 048 removed the signup trigger that gave every app user an
+         * admin_profiles row, and with it the /setup page those rows
+         * were sent to — that page promoted whoever opened it to admin,
+         * and only failed because RLS has no UPDATE policy on the table.
+         */
         await supabase.auth.signOut();
         router.push("/login?error=unauthorized");
         return;
@@ -64,8 +67,8 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
     checkAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
         router.push("/login");
       }
     });

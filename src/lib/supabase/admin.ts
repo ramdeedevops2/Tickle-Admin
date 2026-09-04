@@ -43,7 +43,35 @@ export type AdminAuth =
   | { error: NextResponse; supabase?: undefined; user?: undefined }
   | { error?: undefined; supabase: SupabaseClient; user: User };
 
-export async function requireAdmin(request: NextRequest): Promise<AdminAuth> {
+/**
+ * Authenticate, and optionally authorise.
+ *
+ * Until now this only asked whether `role` was the string "admin". The
+ * whole roles system underneath it — admin_roles, admin_permissions,
+ * role_permissions, admin_profiles.role_key, and an `admin_can()`
+ * function written for exactly this — was stored, editable in the
+ * panel, and consulted by nothing. Ticking a permission box changed a
+ * row and changed nobody's access.
+ *
+ * Passing `permission` now gates the route on it for real.
+ *
+ * Two deliberate conservative choices:
+ *
+ *   - A route with no `permission` keeps the old rule (must be
+ *     role "admin"). Opening every ungated route to every role as a
+ *     side effect of adding enforcement would be a widening nobody
+ *     asked for; routes join the new system one at a time, by being
+ *     given a permission.
+ *
+ *   - An admin whose `role_key` was never backfilled is treated as the
+ *     built-in "admin" role rather than as having no permissions. The
+ *     alternative locks the only administrator out of their own panel,
+ *     which is a worse failure than a slightly generous default.
+ */
+export async function requireAdmin(
+  request: NextRequest,
+  permission?: string,
+): Promise<AdminAuth> {
   const token = request.headers.get("authorization")?.replace("Bearer ", "");
 
   if (!token) {
@@ -62,17 +90,95 @@ export async function requireAdmin(request: NextRequest): Promise<AdminAuth> {
 
   const { data: profile, error: profileError } = await supabase
     .from("admin_profiles")
-    .select("role")
+    .select("role, role_key")
     .eq("id", user.id)
     .single();
 
-  if (profileError || profile?.role !== "admin") {
+  if (profileError || !profile) {
     return {
       error: NextResponse.json({ error: "Admin access required." }, { status: 403 }),
     };
   }
 
+  const roleKey = (profile.role_key as string | null) ?? null;
+
+  // Ungated route: unchanged behaviour.
+  if (!permission) {
+    if (profile.role !== "admin") {
+      return {
+        error: NextResponse.json({ error: "Admin access required." }, { status: 403 }),
+      };
+    }
+    return { supabase, user };
+  }
+
+  /*
+   * Nobody has assigned this person a role yet.
+   *
+   * Before enforcement existed they could do everything, so anyone
+   * still in that state keeps it. Resolving them to the built-in
+   * "admin" role instead would look tidier and would lock the only
+   * administrator out of the roles page — the one screen that could
+   * undo the problem. Enforcement begins the moment a role is
+   * deliberately assigned.
+   */
+  if (!roleKey) {
+    if (profile.role === "admin") return { supabase, user };
+
+    return {
+      error: NextResponse.json(
+        { error: "No role assigned. Ask a super admin to give you one." },
+        { status: 403 },
+      ),
+    };
+  }
+
+  const allowed = await hasPermission(supabase, roleKey, permission);
+
+  if (!allowed) {
+    return {
+      error: NextResponse.json(
+        { error: `Your role cannot do this (${permission}).` },
+        { status: 403 },
+      ),
+    };
+  }
+
   return { supabase, user };
+}
+
+/**
+ * Whether a role grants a permission.
+ *
+ * Prefers the `admin_can` function from migration 050 so the answer
+ * matches anything else asking the same question. Where that function
+ * has not been created yet, it falls back to reading the same two
+ * tables directly rather than failing open — a permission check that
+ * returns "yes" when it errors is worse than no check at all.
+ */
+async function hasPermission(
+  supabase: SupabaseClient,
+  roleKey: string,
+  permission: string,
+): Promise<boolean> {
+  const { data: role } = await supabase
+    .from("admin_roles")
+    .select("is_super")
+    .eq("key", roleKey)
+    .maybeSingle();
+
+  // The super flag is a flag rather than a permission set precisely so
+  // it cannot be assembled by ticking boxes.
+  if (role?.is_super) return true;
+
+  const { data: grant } = await supabase
+    .from("role_permissions")
+    .select("permission_key")
+    .eq("role_key", roleKey)
+    .eq("permission_key", permission)
+    .maybeSingle();
+
+  return Boolean(grant);
 }
 
 /** Turns a thrown error into the JSON shape every route here returns. */

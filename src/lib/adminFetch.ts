@@ -39,7 +39,7 @@ export async function adminTable<T>(
   }
   if (options.in) {
     params.set("in", options.in[0]);
-    params.set("values", options.in[1].join(","));
+    params.set("values", options.in[1].join(", "));
   }
   if (options.gt) {
     params.set("gt", options.gt[0]);

@@ -1,19 +1,27 @@
 "use client";
-
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
+import { PagedList } from "@/components/ui/paged-list";
 import { adminFetch } from "@/lib/adminFetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Plus, RefreshCw } from "lucide-react";
+import { Select } from "@/components/ui/select";
+import { RulesEditor } from "@/components/RulesEditor";
+import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { PageHeader, Explainer } from "@/components/ui/page";
+import { Segmented } from "@/components/ui/select";
+import { MessageStreamPanel } from "@/components/messaging/MessageStreamPanel";
+import { BroadcastPanel } from "@/components/messaging/BroadcastPanel";
+import { useSearchParams } from "next/navigation";
 
 /**
  * The messaging levers.
  *
  * Everything here changes what the app offers on its next launch, with
  * no build in between — which is the point of the spec calling these
- * "dynamically configured".
+ *"dynamically configured".
  *
  * There is no message content on this page, and no route that would
  * return any. A panel that can read disappearing messages has undone the
@@ -48,7 +56,27 @@ type Payload = {
   captures: number;
 };
 
+type Tab = "stream" | "rules" | "announce";
+
+const TABS: { value: Tab; label: string }[] = [
+  { value: "stream", label: "Messages" },
+  { value: "rules", label: "Rules" },
+  { value: "announce", label: "Announcements" },
+];
+
+const BLURB: Record<Tab, string> = {
+  stream:
+    "Conversations as the two people saw them. Nothing here can be changed.",
+  rules: "How long messages last, and how Glimpses work.",
+  announce:
+    "Send a notification to everybody, or to one group. It reaches real phones straight away.",
+};
+
 export default function MessagingPage() {
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() =>
+    searchParams.get("tab") === "rules" ? "rules" : "stream",
+  );
   const [data, setData] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -72,9 +100,7 @@ export default function MessagingPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    void Promise.resolve().then(load);
-  }, [load]);
+  useLoadOnMount(load);
 
   const patch = useCallback(
     async (update: Record<string, unknown>) => {
@@ -132,247 +158,276 @@ export default function MessagingPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Messaging</h2>
-          <p className="text-muted-foreground">
-            Retention, Glimpses, saving prices. No message content is readable here.
-          </p>
-        </div>
-        <Button variant="outline" size="icon" onClick={load} disabled={loading}>
-          <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
-        </Button>
+        <PageHeader
+          title="Messaging"
+          description="Conversations, and how long messages last."
+          actions={
+            <>
+              <Segmented value={tab} onChange={setTab} options={TABS} />
+              {tab === "rules" && (
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  onClick={load}
+                  disabled={loading}
+                  aria-label="Refresh"
+                >
+                  <RefreshCw className={loading ? "animate-spin" : undefined} />
+                </Button>
+              )}
+            </>
+          }
+        />
       </div>
 
-      {error && (
-        <Card className="border-destructive">
-          <CardContent className="pt-6 text-sm text-destructive">{error}</CardContent>
-        </Card>
-      )}
+      <Explainer>{BLURB[tab]}</Explainer>
 
-      {data && (
-        <div className="grid gap-4 md:grid-cols-4">
-          <Stat label="Messages" value={data.volume.total} />
-          <Stat label="Saved with Roses" value={data.volume.saved} />
-          <Stat label="Voice notes" value={data.volume.byKind.voice ?? 0} />
-          <Stat label="Capture alerts" value={data.captures} />
-        </div>
-      )}
+      {tab === "stream" && <MessageStreamPanel />}
 
-      {settings && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Limits</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <Field
-              label="Save price floor"
-              hint="Roses. The lowest a sender may charge."
-              value={settings.save_price_min}
-              onCommit={(value) => patch({ save_price_min: value })}
-              disabled={busy}
-            />
-            <Field
-              label="Save price ceiling"
-              hint="The highest. Senders pick inside this range."
-              value={settings.save_price_max}
-              onCommit={(value) => patch({ save_price_max: value })}
-              disabled={busy}
-            />
-            <Field
-              label="Sender's share"
-              hint="Percent of a save that goes to the sender."
-              value={settings.save_sender_share}
-              onCommit={(value) => patch({ save_sender_share: value })}
-              disabled={busy}
-            />
-            <Field
-              label="Voice note length"
-              hint="Seconds. Spec suggests 60–120."
-              value={settings.voice_max_seconds}
-              onCommit={(value) => patch({ voice_max_seconds: value })}
-              disabled={busy}
-            />
-            <Field
-              label="Edit window"
-              hint="Minutes a text message stays editable."
-              value={minutesOf(settings.edit_window)}
-              onCommit={(value) => patch({ edit_window_minutes: value })}
-              disabled={busy}
-            />
+      {tab === "announce" && <BroadcastPanel />}
 
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Default retention</label>
-              <select
-                value={settings.default_retention}
-                onChange={(event) => patch({ default_retention: event.target.value })}
-                disabled={busy}
-                className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-              >
-                {(data?.retention ?? [])
-                  .filter((option) => option.active)
-                  .map((option) => (
-                    <option key={option.key} value={option.key}>
-                      {option.label}
-                    </option>
-                  ))}
-              </select>
-              <p className="text-xs text-muted-foreground">
-                What a message gets when the sender does not choose.
-              </p>
+      {tab === "rules" && (
+        <>
+          {error && (
+            <Card className="border-destructive">
+              <CardContent className="pt-6 text-[0.92rem] text-destructive">
+                {error}
+              </CardContent>
+            </Card>
+          )}
+
+          {data && (
+            <div className="grid gap-4 md:grid-cols-4">
+              <Stat label="Messages" value={data.volume.total} />
+              <Stat label="Photos bought to keep" value={data.volume.saved} />
+              <Stat label="Voice notes" value={data.volume.byKind.voice ?? 0} />
+              <Stat label="Screenshot warnings" value={data.captures} />
             </div>
-          </CardContent>
-        </Card>
+          )}
+
+          {settings && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Limits</CardTitle>
+                <p className="text-[0.86rem] leading-relaxed text-muted-foreground">
+                  How much somebody can send, and how quickly.
+                </p>
+              </CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                <Field
+                  label="Voice note length"
+                  hint="In seconds. Somewhere between 60 and 120 works well."
+                  value={settings.voice_max_seconds}
+                  onCommit={(value) => patch({ voice_max_seconds: value })}
+                  disabled={busy}
+                />
+                <Field
+                  label="Edit window"
+                  hint="How many minutes someone has to fix a typo after sending."
+                  value={minutesOf(settings.edit_window)}
+                  onCommit={(value) => patch({ edit_window_minutes: value })}
+                  disabled={busy}
+                />
+
+                <div className="space-y-1">
+                  <label className="text-[0.92rem] font-medium">
+                    Default retention
+                  </label>
+                  <Select
+                    value={settings.default_retention}
+                    onChange={(next) => patch({ default_retention: next })}
+                    disabled={busy}
+                    options={(data?.retention ?? [])
+                      .filter((option) => option.active)
+                      .map((option) => ({
+                        value: option.key,
+                        label: option.label,
+                      }))}
+                    className="w-full"
+                  />
+                  <p className="text-[1rem] leading-relaxed text-muted-foreground">
+                    What a message gets when the sender does not choose.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Retention options</CardTitle>
+              <p className="text-[0.92rem] text-muted-foreground">
+                Disappear after a set time, or after a set number of opens.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <PagedList
+                  items={data?.retention ?? []}
+                  perPage={24}
+                  className="flex flex-wrap gap-2"
+                >
+                  {(option) => (
+                    <div
+                      key={option.id}
+                      className={
+                        option.active
+                          ? "flex items-center gap-2 rounded-full border px-3 py-1.5 text-[0.92rem]"
+                          : "flex items-center gap-2 rounded-full border border-dashed px-3 py-1.5 text-[0.92rem] text-muted-foreground line-through"
+                      }
+                    >
+                      <span>{option.label}</span>
+                      <Badge variant="secondary" className="text-[0.86rem]">
+                        {option.view_budget != null
+                          ? `${option.view_budget} view`
+                          : "timed"}
+                      </Badge>
+                      {option.active && (
+                        <button
+                          type="button"
+                          onClick={() => retire("retention", option.id)}
+                          disabled={busy}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </PagedList>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Input
+                  value={newKey}
+                  onChange={(event) => setNewKey(event.target.value)}
+                  placeholder="Short name, like 3d"
+                  className="h-8 w-32"
+                />
+                <Input
+                  value={newLabel}
+                  onChange={(event) => setNewLabel(event.target.value)}
+                  placeholder="Label"
+                  className="h-8 w-36"
+                />
+                <Input
+                  value={newHours}
+                  onChange={(event) => {
+                    setNewHours(event.target.value);
+                    if (event.target.value) setNewViews("");
+                  }}
+                  placeholder="hours"
+                  type="number"
+                  className="h-8 w-24"
+                />
+                <span className="self-center text-[0.86rem] text-muted-foreground">
+                  or
+                </span>
+                <Input
+                  value={newViews}
+                  onChange={(event) => {
+                    setNewViews(event.target.value);
+                    if (event.target.value) setNewHours("");
+                  }}
+                  placeholder="views"
+                  type="number"
+                  className="h-8 w-24"
+                />
+                <Button
+                  size="sm"
+                  disabled={
+                    busy ||
+                    !newKey.trim() ||
+                    !newLabel.trim() ||
+                    (!newHours && !newViews)
+                  }
+                  onClick={() => {
+                    add({
+                      entity: "retention",
+                      key: newKey.trim(),
+                      label: newLabel.trim(),
+                      hours: newHours ? Number(newHours) : null,
+                      views: newViews ? Number(newViews) : null,
+                    });
+                    setNewKey("");
+                    setNewLabel("");
+                    setNewHours("");
+                    setNewViews("");
+                  }}
+                >
+                  <Plus className="mr-1 h-4 w-4" />
+                  Add
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Glimpse durations</CardTitle>
+              <p className="text-[0.92rem] text-muted-foreground">
+                Milliseconds. A Glimpse is a glance, not a short video.
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                <PagedList
+                  items={data?.glimpse ?? []}
+                  perPage={24}
+                  className="flex flex-wrap gap-2"
+                >
+                  {(option) => (
+                    <div
+                      key={option.id}
+                      className={
+                        option.active
+                          ? "flex items-center gap-2 rounded-full border px-3 py-1.5 text-[0.92rem]"
+                          : "flex items-center gap-2 rounded-full border border-dashed px-3 py-1.5 text-[0.92rem] text-muted-foreground line-through"
+                      }
+                    >
+                      <span>{option.label}</span>
+                      {option.active && (
+                        <button
+                          type="button"
+                          onClick={() => retire("glimpse", option.id)}
+                          disabled={busy}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </PagedList>
+              </div>
+
+              <div className="flex gap-2">
+                <Input
+                  value={newGlimpse}
+                  onChange={(event) => setNewGlimpse(event.target.value)}
+                  placeholder="Milliseconds — 1000 is one second"
+                  type="number"
+                  className="h-8 w-36"
+                />
+                <Button
+                  size="sm"
+                  disabled={busy || !newGlimpse}
+                  onClick={() => {
+                    add({ entity: "glimpse", ms: Number(newGlimpse) });
+                    setNewGlimpse("");
+                  }}
+                >
+                  <Plus className="mr-1 h-4 w-4" />
+                  Add
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+          {/* Messaging rules, which lived on /config while this page —
+          also messaging settings — sat separately. */}
+          <RulesEditor />
+        </>
       )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Retention options</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Each is either a duration or a view budget — never both.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {(data?.retention ?? []).map((option) => (
-              <div
-                key={option.id}
-                className={
-                  option.active
-                    ? "flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm"
-                    : "flex items-center gap-2 rounded-full border border-dashed px-3 py-1.5 text-sm text-muted-foreground line-through"
-                }
-              >
-                <span>{option.label}</span>
-                <Badge variant="secondary" className="text-xs">
-                  {option.view_budget != null ? `${option.view_budget} view` : "timed"}
-                </Badge>
-                {option.active && (
-                  <button
-                    type="button"
-                    onClick={() => retire("retention", option.id)}
-                    disabled={busy}
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Input
-              value={newKey}
-              onChange={(event) => setNewKey(event.target.value)}
-              placeholder="key (e.g. 3d)"
-              className="h-8 w-32"
-            />
-            <Input
-              value={newLabel}
-              onChange={(event) => setNewLabel(event.target.value)}
-              placeholder="Label"
-              className="h-8 w-36"
-            />
-            <Input
-              value={newHours}
-              onChange={(event) => {
-                setNewHours(event.target.value);
-                if (event.target.value) setNewViews("");
-              }}
-              placeholder="hours"
-              type="number"
-              className="h-8 w-24"
-            />
-            <span className="self-center text-xs text-muted-foreground">or</span>
-            <Input
-              value={newViews}
-              onChange={(event) => {
-                setNewViews(event.target.value);
-                if (event.target.value) setNewHours("");
-              }}
-              placeholder="views"
-              type="number"
-              className="h-8 w-24"
-            />
-            <Button
-              size="sm"
-              disabled={busy || !newKey.trim() || !newLabel.trim() || (!newHours && !newViews)}
-              onClick={() => {
-                add({
-                  entity: "retention",
-                  key: newKey.trim(),
-                  label: newLabel.trim(),
-                  hours: newHours ? Number(newHours) : null,
-                  views: newViews ? Number(newViews) : null,
-                });
-                setNewKey("");
-                setNewLabel("");
-                setNewHours("");
-                setNewViews("");
-              }}
-            >
-              <Plus className="mr-1 h-4 w-4" />
-              Add
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Glimpse durations</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Milliseconds. A Glimpse is a glance, not a short video.
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {(data?.glimpse ?? []).map((option) => (
-              <div
-                key={option.id}
-                className={
-                  option.active
-                    ? "flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm"
-                    : "flex items-center gap-2 rounded-full border border-dashed px-3 py-1.5 text-sm text-muted-foreground line-through"
-                }
-              >
-                <span>{option.label}</span>
-                {option.active && (
-                  <button
-                    type="button"
-                    onClick={() => retire("glimpse", option.id)}
-                    disabled={busy}
-                    className="text-muted-foreground hover:text-destructive"
-                  >
-                    ×
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
-          <div className="flex gap-2">
-            <Input
-              value={newGlimpse}
-              onChange={(event) => setNewGlimpse(event.target.value)}
-              placeholder="milliseconds"
-              type="number"
-              className="h-8 w-36"
-            />
-            <Button
-              size="sm"
-              disabled={busy || !newGlimpse}
-              onClick={() => {
-                add({ entity: "glimpse", ms: Number(newGlimpse) });
-                setNewGlimpse("");
-              }}
-            >
-              <Plus className="mr-1 h-4 w-4" />
-              Add
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
@@ -381,9 +436,13 @@ function Stat({ label, value }: { label: string; value: number }) {
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
+        <CardTitle className="text-[0.92rem] font-medium text-muted-foreground">
+          {label}
+        </CardTitle>
       </CardHeader>
-      <CardContent className="text-3xl font-bold">{value.toLocaleString()}</CardContent>
+      <CardContent className="text-3xl font-bold">
+        {value.toLocaleString()}
+      </CardContent>
     </Card>
   );
 }
@@ -404,7 +463,7 @@ function Field({
 }) {
   return (
     <div className="space-y-1">
-      <label className="text-sm font-medium">{label}</label>
+      <label className="text-[0.92rem] font-medium">{label}</label>
       <Input
         type="number"
         defaultValue={value}
@@ -415,12 +474,14 @@ function Field({
         }}
         className="h-9"
       />
-      <p className="text-xs text-muted-foreground">{hint}</p>
+      <p className="text-[1rem] leading-relaxed text-muted-foreground">
+        {hint}
+      </p>
     </div>
   );
 }
 
-/** Postgres hands intervals back as "00:10:00". Only minutes matter here. */
+/** Postgres hands intervals back as"00:10:00". Only minutes matter here. */
 function minutesOf(interval: string): number {
   const match = /^(\d+):(\d+):/.exec(interval ?? "");
   if (!match) return 10;

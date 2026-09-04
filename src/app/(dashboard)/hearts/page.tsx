@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { adminFetch } from "@/lib/adminFetch";
@@ -10,11 +10,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { MapPin, RefreshCw, Search, Timer, Trash2 } from "lucide-react";
+import { HeartSettingsPanel } from "@/components/hearts/HeartSettingsPanel";
+import { EmptyState } from "@/components/ui/page";
+import { PageSkeleton } from "@/components/ui/page";
+import { Pagination, paginate, usePagination } from "@/components/ui/pagination";
+import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { HuntPanel } from "@/components/hearts/HuntPanel";
 
 /**
  * Hearts left at venues, and the sparks they turned into.
  *
- * Three numbers matter here and "how many hearts exist" is not one of them.
+ * Three numbers matter here and"how many hearts exist" is not one of them.
  * What counts is how many are live, how many were picked up, and how many
  * expired unclaimed — because a feature where people drop hearts nobody ever
  * finds fails quietly, and only the ratio between those three shows it.
@@ -71,7 +77,7 @@ type SparkView = SparkRow & {
 const STATUS_STYLES: Record<string, string> = {
   active: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600",
   claimed: "border-blue-500/30 bg-blue-500/10 text-blue-600",
-  expired: "border-border/50 bg-muted text-muted-foreground",
+  expired: "border-foreground/[0.06] bg-muted text-muted-foreground",
   withdrawn: "border-orange-500/30 bg-orange-500/10 text-orange-600",
 };
 
@@ -88,12 +94,18 @@ function formatDateTime(value: string | null) {
       });
 }
 
-function getName(profile: ProfileRow | null, fallback: string) {
-  return profile?.name || profile?.email || fallback.slice(0, 8);
+/*
+ * The route resolves a name for every id before the page sees it — the
+ * profile's own, then the auth record's email or phone, and "Unnamed
+ * member" when the account carries none of them. The uuid that used to be
+ * drawn here is not a name and never was, so it is not a fallback either.
+ */
+function getName(profile: ProfileRow | null) {
+  return profile?.name || profile?.email || "Deleted account";
 }
 
-function getInitials(profile: ProfileRow | null, fallback: string) {
-  return getName(profile, fallback)
+function getInitials(profile: ProfileRow | null) {
+  return getName(profile)
     .split(/\s+/)
     .slice(0, 2)
     .map((part) => part[0])
@@ -106,7 +118,7 @@ export default function HeartsPage() {
   // a production build fails outright without one.
   return (
     <Suspense
-      fallback={<div className="py-16 text-center text-muted-foreground">Loading hearts...</div>}
+      fallback={<PageSkeleton sections={2} />}
     >
       <HeartsView />
     </Suspense>
@@ -117,34 +129,37 @@ function HeartsView() {
   const searchParams = useSearchParams();
 
   const [hearts, setHearts] = useState<HeartView[]>([]);
+  const [loadedAt, setLoadedAt] = useState(0);
   const [sparks, setSparks] = useState<SparkView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [tab, setTab] = useState<"hearts" | "sparks">("hearts");
+  const [tab, setTab] = useState<"hearts" | "sparks" | "hunt" | "settings">(() =>
+    searchParams.get("tab") === "settings" ? "settings" :"hearts",
+  );
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
 
-    const { data, error } = await adminFetch<{ hearts: HeartView[]; sparks: SparkView[] }>(
-      "/api/hearts",
+    const { data, error } = await adminFetch<{ hearts: HeartView[]; sparks: SparkView[] }>("/api/hearts",
     );
 
     if (error) {
       setError(error);
     } else {
       setHearts(data?.hearts ?? []);
+      // The instant this snapshot is true as of. Set with the rows so a
+      // heart cannot appear live against a clock newer than the data.
+      setLoadedAt(Date.now());
       setSparks(data?.sparks ?? []);
     }
 
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    void Promise.resolve().then(load);
-  }, [load]);
+  useLoadOnMount(load);
 
   const expireNow = useCallback(async () => {
     setBusy(true);
@@ -163,11 +178,16 @@ function HeartsView() {
   // The palette links here as /hearts?action=expire, so arriving that way has
   // to actually run the sweep rather than just landing on the page.
   const wantsExpire = searchParams.get("action") === "expire";
+  const sweptOnArrival = useRef(false);
+
   useEffect(() => {
-    if (wantsExpire) void expireNow();
-    // Once, on arrival — not again on every reload the sweep itself triggers.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wantsExpire]);
+    if (!wantsExpire || sweptOnArrival.current) return;
+    sweptOnArrival.current = true;
+
+    void Promise.resolve().then(() => {
+      void expireNow();
+    });
+  }, [wantsExpire, expireNow]);
 
   const withdraw = useCallback(
     async (heartId: string) => {
@@ -183,8 +203,9 @@ function HeartsView() {
     [load],
   );
 
-  const stats = useMemo(() => {
-    const now = Date.now();
+  const stats = (() => {
+    const now = loadedAt;
+
     const live = hearts.filter(
       (row) => row.status === "active" && new Date(row.expires_at).getTime() > now,
     ).length;
@@ -200,7 +221,7 @@ function HeartsView() {
       // reached an end state, how many found someone.
       pickupRate: settled > 0 ? Math.round((claimed / settled) * 100) : 0,
     };
-  }, [hearts]);
+  })();
 
   const filteredHearts = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -209,7 +230,7 @@ function HeartsView() {
       (row) =>
         row.place?.name?.toLowerCase().includes(q) ||
         row.note?.toLowerCase().includes(q) ||
-        getName(row.dropper, row.dropper_id).toLowerCase().includes(q),
+        getName(row.dropper).toLowerCase().includes(q),
     );
   }, [hearts, query]);
 
@@ -219,18 +240,22 @@ function HeartsView() {
     return sparks.filter(
       (row) =>
         row.place?.name?.toLowerCase().includes(q) ||
-        getName(row.dropper, row.dropper_id).toLowerCase().includes(q) ||
-        getName(row.picker, row.picker_id).toLowerCase().includes(q),
+        getName(row.dropper).toLowerCase().includes(q) ||
+        getName(row.picker).toLowerCase().includes(q),
     );
   }, [sparks, query]);
+
+  // Resets when a filter shortens the list, so filtering while on a
+  // later page cannot leave you looking at an empty one.
+  const { page, setPage } = usePagination(filteredHearts.length);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Hearts</h2>
-          <p className="text-muted-foreground">
-            Dropped at venues, and the sparks they turned into.
+          <h1 className="text-[1.6rem] font-medium tracking-tight">Hearts</h1>
+          <p className="mt-1 max-w-2xl text-[0.92rem] leading-relaxed text-muted-foreground">
+            Hearts left at venues, and the chats that started.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -240,7 +265,7 @@ function HeartsView() {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              className="rounded-none border border-border bg-transparent pl-8"
+              className="pl-8"
               placeholder="Venue, note or person"
             />
           </div>
@@ -248,7 +273,7 @@ function HeartsView() {
             variant="outline"
             onClick={expireNow}
             disabled={busy || loading}
-            className="rounded-none border-border/50 text-xs uppercase tracking-[0.2em]"
+            className="border-foreground/[0.06] text-[0.86rem]"
           >
             <Timer className="mr-2 size-4" />
             Expire
@@ -257,7 +282,7 @@ function HeartsView() {
             variant="outline"
             onClick={load}
             disabled={loading}
-            className="rounded-none border-border/50 text-xs uppercase tracking-[0.2em]"
+            className="border-foreground/[0.06] text-[0.86rem]"
           >
             <RefreshCw className="mr-2 size-4" />
             Refresh
@@ -266,47 +291,81 @@ function HeartsView() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">
-        <Stat label="Live Now" value={stats.live} />
-        <Stat label="Picked Up" value={stats.claimed} />
-        <Stat label="Expired Unclaimed" value={stats.expired} />
-        <Stat label="Pickup Rate" value={`${stats.pickupRate}%`} />
+        <Stat label="Live now" value={stats.live} />
+        <Stat label="Picked up" value={stats.claimed} />
+        <Stat label="Expired, nobody picked up" value={stats.expired} />
+        <Stat label="How many get picked up" value={`${stats.pickupRate}%`} />
       </div>
 
-      <div className="flex w-fit border border-border/50">
+      <div className="inline-flex w-fit items-center gap-0.5 rounded-full bg-foreground/[0.05] p-0.5">
         <TabButton active={tab === "hearts"} onClick={() => setTab("hearts")}>
           Hearts {hearts.length > 0 && `(${hearts.length})`}
         </TabButton>
         <TabButton active={tab === "sparks"} onClick={() => setTab("sparks")}>
           Sparks {sparks.length > 0 && `(${sparks.length})`}
         </TabButton>
+        {/* The rules that produce everything in the other two tabs. They
+            were on a separate"Config" page, which meant reading the
+            numbers and changing what makes them were different screens. */}
+        <TabButton active={tab === "hunt"} onClick={() => setTab("hunt")}>
+          Heart Hunt
+        </TabButton>
+        <TabButton active={tab === "settings"} onClick={() => setTab("settings")}>
+          Settings
+        </TabButton>
       </div>
 
-      <Card className="border-border/50 bg-card">
+      {tab === "hunt" && <HuntPanel />}
+
+      {tab === "settings" && <HeartSettingsPanel />}
+
+      <Card className={tab === "settings" ? "hidden" :"border-foreground/[0.06] bg-card"}>
         <CardHeader>
-          <CardTitle>{tab === "hearts" ? "Every Heart" : "Every Spark"}</CardTitle>
+          <CardTitle>{tab === "hearts" ? "Every Heart" :"Every Spark"}</CardTitle>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="py-16 text-center text-muted-foreground">Loading hearts...</div>
+            <PageSkeleton sections={2} />
           ) : error ? (
             <div className="py-16 text-center text-destructive">{error}</div>
           ) : tab === "hearts" ? (
             filteredHearts.length === 0 ? (
-              <div className="py-16 text-center text-muted-foreground">No hearts found.</div>
+              <EmptyState
+                title="No hearts match"
+                body="Either nobody has dropped one recently, or the search above is hiding them."
+              />
             ) : (
               <div className="space-y-4">
-                {filteredHearts.map((row) => (
-                  <HeartRowView key={row.id} row={row} onWithdraw={withdraw} busy={busy} />
+                <>
+                  {paginate(filteredHearts, page).map((row) => (
+                  <HeartRowView
+                    key={row.id}
+                    row={row}
+                    onWithdraw={withdraw}
+                    busy={busy}
+                    now={loadedAt}
+                  />
                 ))}
+                  <Pagination page={page} total={filteredHearts.length} onPage={setPage} />
+                </>
               </div>
             )
           ) : filteredSparks.length === 0 ? (
-            <div className="py-16 text-center text-muted-foreground">No sparks found.</div>
+            <EmptyState
+              title="No sparks yet"
+              body="A spark happens when somebody picks up a heart. None have been picked up in this period."
+            />
           ) : (
             <div className="space-y-4">
-              {filteredSparks.map((row) => (
+              {paginate(filteredSparks, page).map((row) => (
                 <SparkRowView key={row.id} row={row} />
               ))}
+
+              <Pagination
+                page={page}
+                total={filteredSparks.length}
+                onPage={setPage}
+              />
             </div>
           )}
         </CardContent>
@@ -317,11 +376,11 @@ function HeartsView() {
 
 function Stat({ label, value }: { label: string; value: number | string }) {
   return (
-    <Card className="border-border/50 bg-card">
+    <Card className="border-foreground/[0.06] bg-card">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
+        <CardTitle className="text-[0.92rem] font-medium text-muted-foreground">{label}</CardTitle>
       </CardHeader>
-      <CardContent className="text-3xl font-black tracking-tight">{value}</CardContent>
+      <CardContent className="tnum text-[1.9rem] font-light tracking-tight">{value}</CardContent>
     </Card>
   );
 }
@@ -338,8 +397,10 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-2 text-xs uppercase tracking-[0.2em] transition-colors ${
-        active ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
+      className={`rounded-full px-3.5 py-1.5 text-[0.86rem] font-medium transition-all duration-200 ${
+        active
+          ? "bg-primary text-primary-foreground shadow-[0_1px_2px_rgba(26,26,24,0.18)]"
+          : "text-muted-foreground hover:text-foreground"
       }`}
     >
       {children}
@@ -351,41 +412,44 @@ function HeartRowView({
   row,
   onWithdraw,
   busy,
+  now,
 }: {
   row: HeartView;
   onWithdraw: (id: string) => void;
   busy: boolean;
+  /** The instant the whole list is being judged against. */
+  now: number;
 }) {
-  const live = row.status === "active" && new Date(row.expires_at).getTime() > Date.now();
+  const live = row.status === "active" && new Date(row.expires_at).getTime() > now;
 
   return (
-    <div className="flex items-center gap-4 border-b border-border/50 pb-4 last:border-0 last:pb-0">
+    <div className="flex items-center gap-4 border-b border-foreground/[0.06] pb-4 last:border-0 last:pb-0">
       <Link href={`/members/${row.dropper_id}`}>
-        <Avatar className="h-10 w-10 border border-border bg-transparent">
+        <Avatar className="h-10 w-10 border border-foreground/[0.06] bg-transparent">
           <AvatarImage src={row.dropper?.photos?.[0] ?? undefined} />
-          <AvatarFallback className="bg-transparent text-xs">
-            {getInitials(row.dropper, row.dropper_id)}
+          <AvatarFallback className="bg-transparent text-[0.86rem]">
+            {getInitials(row.dropper)}
           </AvatarFallback>
         </Avatar>
       </Link>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">
-          {getName(row.dropper, row.dropper_id)}
+        <p className="truncate text-[0.92rem] font-medium">
+          {getName(row.dropper)}
           <span className="text-muted-foreground"> at </span>
-          {row.place?.name ?? "Unknown venue"}
+          {row.place?.name ??"Unknown venue"}
         </p>
-        <p className="truncate text-xs text-muted-foreground">
+        <p className="truncate text-[0.86rem] text-muted-foreground">
           {row.note || <span className="italic">No note</span>}
-          {row.vibe ? ` - ${row.vibe}` : ""}
+          {row.vibe ? ` - ${row.vibe}` :""}
           {` - ${formatDateTime(row.created_at)}`}
         </p>
       </div>
 
       <Badge
         variant="outline"
-        className={`rounded-none text-[10px] uppercase tracking-[0.2em] ${
-          STATUS_STYLES[live ? "active" : row.status] ?? ""
+        className={`text-[0.86rem] ${
+          STATUS_STYLES[live ? "active" : row.status] ??""
         }`}
       >
         {live ? "Active" : row.status}
@@ -398,7 +462,6 @@ function HeartRowView({
           disabled={busy}
           onClick={() => onWithdraw(row.id)}
           title="Withdraw this heart"
-          className="rounded-none"
         >
           <Trash2 className="size-4" />
         </Button>
@@ -409,41 +472,41 @@ function HeartRowView({
 
 function SparkRowView({ row }: { row: SparkView }) {
   return (
-    <div className="flex items-center gap-4 border-b border-border/50 pb-4 last:border-0 last:pb-0">
+    <div className="flex items-center gap-4 border-b border-foreground/[0.06] pb-4 last:border-0 last:pb-0">
       <div className="flex -space-x-4">
-        <Avatar className="h-10 w-10 border border-border bg-transparent">
+        <Avatar className="h-10 w-10 border border-foreground/[0.06] bg-transparent">
           <AvatarImage src={row.dropper?.photos?.[0] ?? undefined} />
-          <AvatarFallback className="bg-transparent text-xs">
-            {getInitials(row.dropper, row.dropper_id)}
+          <AvatarFallback className="bg-transparent text-[0.86rem]">
+            {getInitials(row.dropper)}
           </AvatarFallback>
         </Avatar>
-        <Avatar className="h-10 w-10 border border-border bg-transparent">
+        <Avatar className="h-10 w-10 border border-foreground/[0.06] bg-transparent">
           <AvatarImage src={row.picker?.photos?.[0] ?? undefined} />
-          <AvatarFallback className="bg-transparent text-xs">
-            {getInitials(row.picker, row.picker_id)}
+          <AvatarFallback className="bg-transparent text-[0.86rem]">
+            {getInitials(row.picker)}
           </AvatarFallback>
         </Avatar>
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">
-          {getName(row.dropper, row.dropper_id)}
+        <p className="truncate text-[0.92rem] font-medium">
+          {getName(row.dropper)}
           <span className="text-muted-foreground"> and </span>
-          {getName(row.picker, row.picker_id)}
+          {getName(row.picker)}
         </p>
-        <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+        <p className="flex items-center gap-1 truncate text-[0.86rem] text-muted-foreground">
           <MapPin className="size-3 shrink-0" />
-          {row.place?.name ?? "Unknown venue"} - {formatDateTime(row.created_at)}
+          {row.place?.name ??"Unknown venue"} - {formatDateTime(row.created_at)}
         </p>
       </div>
 
       <Badge
         variant="outline"
-        className={`rounded-none text-[10px] uppercase tracking-[0.2em] ${
+        className={`text-[0.86rem] ${
           row.removed_by ? STATUS_STYLES.expired : STATUS_STYLES.active
         }`}
       >
-        {row.removed_by ? "Removed" : "Live"}
+        {row.removed_by ? "Removed" :"Live"}
       </Badge>
     </div>
   );

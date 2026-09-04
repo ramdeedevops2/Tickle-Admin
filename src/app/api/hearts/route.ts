@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { failed, requireAdmin } from "@/lib/supabase/admin";
+import { NAME_COLUMNS, nameByUserId, type NamedProfile } from "@/lib/supabase/names";
 
 /**
  * Hearts and sparks, denormalised for the panel.
@@ -36,12 +37,7 @@ type SparkRow = {
 
 type PlaceRow = { id: string; name: string; category: string | null };
 
-type ProfileRow = {
-  user_id: string;
-  name: string | null;
-  email: string | null;
-  photos: string[] | null;
-};
+type ProfileRow = NamedProfile;
 
 export async function GET(request: NextRequest) {
   try {
@@ -82,28 +78,40 @@ export async function GET(request: NextRequest) {
         ? supabase.from("places").select("id, name, category").in("id", placeIds)
         : Promise.resolve({ data: [], error: null }),
       userIds.length
-        ? supabase.from("profiles").select("user_id, name, email, photos").in("user_id", userIds)
+        ? supabase.from("profiles").select(NAME_COLUMNS).in("user_id", userIds)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
     const placeById = new Map(
       ((placeRes.data ?? []) as PlaceRow[]).map((row) => [row.id, row]),
     );
-    const profileById = new Map(
-      ((profileRes.data ?? []) as ProfileRow[]).map((row) => [row.user_id, row]),
-    );
+    const profileRows = (profileRes.data ?? []) as unknown as ProfileRow[];
+    const profileById = new Map(profileRows.map((row) => [row.user_id, row]));
+
+    /*
+     * A profile with no name and no email used to reach the panel as null,
+     * and the list drew eight characters of the uuid instead. Resolving the
+     * stragglers against auth here means every row arrives with something
+     * to call the person.
+     */
+    const names = await nameByUserId(supabase, userIds, profileRows);
+
+    const named = (id: string) => ({
+      ...(profileById.get(id) ?? { user_id: id, email: null, photos: null }),
+      name: names.get(id) ?? "Unnamed member",
+    });
 
     return NextResponse.json({
       hearts: hearts.map((row) => ({
         ...row,
         place: placeById.get(row.place_id) ?? null,
-        dropper: profileById.get(row.dropper_id) ?? null,
+        dropper: named(row.dropper_id),
       })),
       sparks: sparks.map((row) => ({
         ...row,
         place: placeById.get(row.place_id) ?? null,
-        dropper: profileById.get(row.dropper_id) ?? null,
-        picker: profileById.get(row.picker_id) ?? null,
+        dropper: named(row.dropper_id),
+        picker: named(row.picker_id),
       })),
     });
   } catch (error) {

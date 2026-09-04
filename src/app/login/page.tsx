@@ -99,6 +99,10 @@ export default function LoginPage() {
     <div className="min-h-screen grid lg:grid-cols-2 bg-background relative overflow-hidden text-foreground">
       {/* LEFT SIDE: Typography & Branding */}
       <div className="hidden lg:flex flex-col justify-between p-12 border-r border-border relative overflow-hidden bg-black">
+        {/* Plain <img>: this is a decorative full-bleed backdrop with
+            no intrinsic size to reserve, so next/image's layout work
+            buys nothing and its loader would only add a hop. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src="https://images.pexels.com/photos/1024960/pexels-photo-1024960.jpeg?auto=compress&cs=tinysrgb&w=1400"
           alt="Couple"
@@ -128,14 +132,14 @@ export default function LoginPage() {
       </div>
 
       {/* RIGHT SIDE: Auth Form */}
-      <div className="flex flex-col justify-center p-8 lg:p-24 relative z-10 bg-black">
+      <div className="relative z-10 flex flex-col justify-center bg-background p-8 lg:p-24">
         {/* Mobile Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           className="lg:hidden flex items-center gap-6 mb-16"
         >
-          <span className="text-3xl font-black tracking-tight uppercase">
+          <span className="text-[1.5rem] font-semibold tracking-tight">
             TICKLE
           </span>
         </motion.div>
@@ -147,14 +151,14 @@ export default function LoginPage() {
             transition={{ duration: 0.6, delay: 0.4 }}
             className="mb-16"
           >
-            <h2 className="text-4xl font-black tracking-tighter uppercase mb-3">
+            <h2 className="mb-3 text-[2rem] font-medium tracking-tight">
               {step === "email" ? "Access" : "Verify"}
             </h2>
             <motion.div
               initial={{ width: 0 }}
               animate={{ width: 48 }}
               transition={{ duration: 0.8, delay: 0.8 }}
-              className="h-1 bg-foreground mb-4"
+              className="mb-4 h-0.5 rounded-full bg-foreground/80"
             ></motion.div>
           </motion.div>
 
@@ -167,7 +171,7 @@ export default function LoginPage() {
               className="space-y-8"
             >
               <div className="space-y-3 group">
-                <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground group-focus-within:text-foreground transition-colors">
+                <label className="text-[0.8rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">
                   Email
                 </label>
                 <div className="relative">
@@ -177,7 +181,7 @@ export default function LoginPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="h-14 bg-transparent border-0 border-b-2 border-muted-foreground/30 focus-visible:ring-0 focus-visible:border-foreground rounded-none px-0 text-xl transition-all placeholder:text-transparent"
+                    className="h-12 rounded-xl px-4 text-base"
                   />
                 </div>
               </div>
@@ -186,15 +190,14 @@ export default function LoginPage() {
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
-                  className="text-xs uppercase tracking-widest text-background bg-foreground p-4 border-l-4 border-muted-foreground font-bold"
-                >
-                  Error: {error}
+                  className="rounded-xl border border-destructive/25 bg-destructive/8 px-3.5 py-2.5 text-[0.92rem] text-destructive"
+                >{error}
                 </motion.div>
               )}
 
               <Button
                 type="submit"
-                className="w-full h-16 bg-foreground text-background hover:bg-muted-foreground transition-colors rounded-none text-sm font-bold uppercase tracking-[0.2em] group mt-8"
+                className="group mt-8 h-12 w-full text-[0.8rem]"
                 disabled={loading || !email}
               >
                 {loading ? "Authenticating..." : "Continue"}
@@ -212,7 +215,7 @@ export default function LoginPage() {
               className="space-y-8"
             >
               <div className="space-y-3 group">
-                <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground group-focus-within:text-foreground transition-colors">
+                <label className="text-[0.8rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground transition-colors group-focus-within:text-foreground">
                   Security Code
                 </label>
                 <Input
@@ -222,7 +225,7 @@ export default function LoginPage() {
                   onChange={(e) => setOtp(e.target.value)}
                   required
                   maxLength={8}
-                  className="h-20 bg-transparent border-0 border-b-2 border-muted-foreground/30 focus-visible:ring-0 focus-visible:border-foreground rounded-none text-center text-4xl tracking-[0.5em] font-mono transition-all"
+                  className="h-16 rounded-xl text-center font-mono text-[1.75rem] tracking-[0.4em]"
                 />
               </div>
 
@@ -230,9 +233,8 @@ export default function LoginPage() {
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: "auto" }}
-                  className="text-xs uppercase tracking-widest text-background bg-foreground p-4 border-l-4 border-muted-foreground font-bold"
-                >
-                  Error: {error}
+                  className="rounded-xl border border-destructive/25 bg-destructive/8 px-3.5 py-2.5 text-[0.92rem] text-destructive"
+                >{error}
                 </motion.div>
               )}
 
@@ -248,7 +250,7 @@ export default function LoginPage() {
 
               <Button
                 type="submit"
-                className="w-full h-16 bg-foreground text-background hover:bg-muted-foreground transition-colors rounded-none text-sm font-bold uppercase tracking-[0.2em] group mt-8"
+                className="group mt-8 h-12 w-full text-[0.8rem]"
                 disabled={loading || otp.length < 6}
               >
                 {loading ? "Decrypting..." : "Enter"}
@@ -261,7 +263,7 @@ export default function LoginPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="w-full rounded-none text-[10px] uppercase tracking-[0.2em] text-foreground border-foreground/20 hover:bg-foreground hover:text-background transition-colors"
+                  className="h-10 w-full text-[0.92rem]"
                   onClick={handleResendOtp}
                   disabled={loading}
                 >
@@ -270,7 +272,7 @@ export default function LoginPage() {
                 <Button
                   type="button"
                   variant="ghost"
-                  className="w-full rounded-none text-[10px] uppercase tracking-[0.2em] text-muted-foreground hover:text-foreground hover:bg-transparent"
+                  className="h-10 w-full text-[0.92rem]"
                   onClick={() => {
                     setStep("email");
                     setOtp("");

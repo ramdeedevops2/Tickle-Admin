@@ -130,6 +130,14 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
     }
 
+    // Who is changing this. A trigger on the table records the change;
+    // this is what lets it record a name against it.
+    await auth.supabase.rpc("set_config_actor", {
+      p_admin_id: auth.user?.id,
+      p_admin_email: auth.user?.email ?? null,
+      p_reason: null,
+    });
+
     const { error } = await auth.supabase.from("heart_settings").update(update).eq("id", 1);
     if (error) throw error;
 

@@ -9,7 +9,21 @@ import { failed, requireAdmin } from "@/lib/supabase/admin";
  * thousand round trips from this handler.
  */
 
-const AUDIENCES = ["everyone", "active", "male", "female"];
+// Must match the list send_broadcast accepts. An audience it does not
+// recognise raises rather than reaching everybody.
+const AUDIENCES = [
+  "everyone",
+  "active",
+  "male",
+  "female",
+  "unpublished",
+  "unverified",
+  "dormant",
+  "new",
+  "premium",
+  "lapsed_premium",
+  "never_paid",
+];
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,7 +38,31 @@ export async function GET(request: NextRequest) {
 
     if (error) throw error;
 
-    return NextResponse.json({ broadcasts: data ?? [] });
+    /*
+     * How many each segment would reach, counted now.
+     *
+     * Shown before the confirm step: a campaign aimed at nobody, or at
+     * everybody by mistake, should be a visible number first rather
+     * than a surprise in the history afterwards.
+     */
+    const { searchParams } = new URL(request.url);
+
+    let sizes: Record<string, number> | null = null;
+
+    if (searchParams.get("sizes") === "1") {
+      const counted = await Promise.all(
+        AUDIENCES.map(async (audience) => {
+          const { data } = await auth.supabase.rpc("audience_size", {
+            p_audience: audience,
+          });
+          return [audience, (data as number) ?? 0] as const;
+        }),
+      );
+
+      sizes = Object.fromEntries(counted);
+    }
+
+    return NextResponse.json({ broadcasts: data ?? [], sizes });
   } catch (error) {
     return failed(error, "Failed to load broadcasts.");
   }

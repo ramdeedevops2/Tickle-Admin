@@ -1,6 +1,5 @@
 "use client";
-
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
 import { DataToolbar } from "@/components/DataToolbar";
 import { useSearchParams } from "next/navigation";
 import { adminTable } from "@/lib/adminFetch";
@@ -20,9 +19,11 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Eye, Filter, RefreshCw } from "lucide-react";
+import { Eye, Filter } from "lucide-react";
 import Link from "next/link";
+import { Pagination, paginate, usePagination } from "@/components/ui/pagination";
+import { PageSkeleton } from "@/components/ui/page";
+import { useLoadOnMount } from "@/lib/useLoadOnMount";
 
 type ProfileRow = StrengthFields & {
   id: string;
@@ -46,12 +47,11 @@ type ProfileRow = StrengthFields & {
 };
 
 /**
- * The command palette links straight to a filtered list — "Photo audit" and
- * "Weak profiles" are questions an admin asks often enough that they deserve
+ * The command palette links straight to a filtered list —"Photo audit" and
+ *"Weak profiles" are questions an admin asks often enough that they deserve
  * a URL rather than a sequence of clicks.
  */
-const FILTERS = {
-  "no-photos": {
+const FILTERS = {"no-photos": {
     label: "No photos",
     description: "Accounts with no photo, or only one.",
     test: (member: ProfileRow) => (member.photos?.length ?? 0) < 2,
@@ -87,7 +87,7 @@ function formatDate(value: string | null) {
 }
 
 function getInitials(value: string | null) {
-  const source = value?.trim() || "US";
+  const source = value?.trim() ||"US";
   return source
     .split(/\s+/)
     .slice(0, 2)
@@ -101,7 +101,7 @@ export default function MembersPage() {
   // a production build fails outright without one.
   return (
     <Suspense
-      fallback={<div className="py-16 text-center text-muted-foreground">Loading members...</div>}
+      fallback={<PageSkeleton sections={2} />}
     >
       <MembersView />
     </Suspense>
@@ -125,8 +125,7 @@ function MembersView() {
     // with RLS on, profiles answers a signed-in admin with their own row and
     // nothing else, so a direct query here returns an empty table.
     const { data, error } = await adminTable<ProfileRow>("profiles", {
-      select:
-        "id, user_id, name, email, age, gender, created_at, search_radius, latitude, longitude, is_online, last_active, interested_in, suspended_at, suspended_reason, city, face_verified_at, published_at, " +
+      select: "id, user_id, name, email, age, gender, created_at, search_radius, latitude, longitude, is_online, last_active, interested_in, suspended_at, suspended_reason, city, face_verified_at, published_at, " +
         STRENGTH_COLUMNS,
       order: "created_at",
       limit: 5000,
@@ -142,9 +141,7 @@ function MembersView() {
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    void Promise.resolve().then(loadMembers);
-  }, [loadMembers]);
+  useLoadOnMount(loadMembers);
 
   const stats = useMemo(() => {
     const online = members.filter((member) => member.is_online).length;
@@ -160,7 +157,7 @@ function MembersView() {
   }, [members]);
 
   // Stats stay over the whole population; only the table narrows. A filtered
-  // view that also rewrites "Total Profiles" is how an admin ends up
+  // view that also rewrites"Total Profiles" is how an admin ends up
   // reporting the size of a subset as the size of the app.
   const [query, setQuery] = useState("");
   const [facets, setFacets] = useState<Record<string, string>>({});
@@ -179,21 +176,21 @@ function MembersView() {
       if (q) {
         const haystack = [member.name, member.email, member.city, member.user_id]
           .filter(Boolean)
-          .join(" ")
+          .join("")
           .toLowerCase();
         if (!haystack.includes(q)) return false;
       }
 
-      const status = facets.status ?? "all";
+      const status = facets.status ??"all";
       if (status === "suspended" && !member.suspended_at) return false;
       if (status === "active" && member.suspended_at) return false;
       if (status === "online" && !member.is_online) return false;
 
-      const verified = facets.verified ?? "all";
+      const verified = facets.verified ??"all";
       if (verified === "face" && !member.face_verified_at) return false;
       if (verified === "unverified" && member.face_verified_at) return false;
 
-      const published = facets.published ?? "all";
+      const published = facets.published ??"all";
       if (published === "live" && !member.published_at) return false;
       if (published === "draft" && member.published_at) return false;
 
@@ -203,19 +200,23 @@ function MembersView() {
     // Sorted on a copy: the loaded list is the order the server sent and
     // other things read it.
     return [...rows].sort((a, b) => {
-      if (sort === "name") return (a.name ?? "").localeCompare(b.name ?? "");
+      if (sort === "name") return (a.name ??"").localeCompare(b.name ??"");
       if (sort === "strength") return profileStrength(b) - profileStrength(a);
       return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
     });
   }, [members, filter, query, facets, sort]);
 
+  // Resets itself when a filter shortens the list, so filtering while
+  // on a later page cannot leave you staring at an empty table.
+  const { page, setPage } = usePagination(visible.length);
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Members</h2>
-          <p className="text-muted-foreground">
-            {filter ? FILTERS[filter].description : "Profiles from the public.profiles table."}
+          <h1 className="text-[1.6rem] font-medium tracking-tight">Members</h1>
+          <p className="mt-1 max-w-2xl text-[0.92rem] leading-relaxed text-muted-foreground">
+            Everybody who signed up. Open anyone for the full picture.
           </p>
         </div>
       </div>
@@ -223,7 +224,7 @@ function MembersView() {
       <DataToolbar
         query={query}
         onQuery={setQuery}
-        searchPlaceholder="Search name, email, city or id"
+        searchPlaceholder="Search by name, email or city"
         filters={[
           {
             id: "status",
@@ -267,18 +268,18 @@ function MembersView() {
       />
 
       {filter && (
-        <div className="flex items-center gap-3 border border-border/50 bg-muted/40 px-4 py-3">
+        <div className="flex items-center gap-3 border border-foreground/[0.06] bg-foreground/[0.03] px-4 py-3">
           <Filter className="size-4 shrink-0 text-muted-foreground" />
-          <span className="text-sm">
+          <span className="text-[0.92rem]">
             <span className="font-medium">{FILTERS[filter].label}</span>
             <span className="text-muted-foreground">
-              {" — "}
+              {" —"}
               {visible.length} of {members.length} accounts
             </span>
           </span>
           <Link
             href="/members"
-            className="ml-auto text-xs uppercase tracking-[0.2em] text-muted-foreground transition-colors hover:text-foreground"
+            className="ml-auto text-[0.86rem] text-muted-foreground transition-colors hover:text-foreground"
           >
             Clear
           </Link>
@@ -286,42 +287,42 @@ function MembersView() {
       )}
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-border/50 bg-card">
+        <Card className="border-foreground/[0.06] bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-[0.92rem] font-medium text-muted-foreground">
               Total Profiles
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-3xl font-black tracking-tight">
+          <CardContent className="tnum text-[1.9rem] font-light tracking-tight">
             {stats.total}
           </CardContent>
         </Card>
-        <Card className="border-border/50 bg-card">
+        <Card className="border-foreground/[0.06] bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-[0.92rem] font-medium text-muted-foreground">
               Online
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-3xl font-black tracking-tight">
+          <CardContent className="tnum text-[1.9rem] font-light tracking-tight">
             {stats.online}
           </CardContent>
         </Card>
-        <Card className="border-border/50 bg-card">
+        <Card className="border-foreground/[0.06] bg-card">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="text-[0.92rem] font-medium text-muted-foreground">
               With Location
             </CardTitle>
           </CardHeader>
-          <CardContent className="text-3xl font-black tracking-tight">
+          <CardContent className="tnum text-[1.9rem] font-light tracking-tight">
             {stats.withLocation}
           </CardContent>
         </Card>
       </div>
 
-      <div className="rounded-md border border-border/50 bg-card">
+      <div className="rounded-lg border border-foreground/[0.06] bg-card">
         <Table>
           <TableHeader>
-            <TableRow className="border-border/50 hover:bg-transparent">
+            <TableRow className="border-foreground/[0.06] hover:bg-transparent">
               <TableHead>Profile</TableHead>
               <TableHead>Age</TableHead>
               <TableHead>Gender</TableHead>
@@ -337,7 +338,7 @@ function MembersView() {
                   colSpan={6}
                   className="h-24 text-center text-muted-foreground"
                 >
-                  Loading members...
+                  Loading…
                 </TableCell>
               </TableRow>
             ) : error ? (
@@ -355,46 +356,46 @@ function MembersView() {
                   colSpan={6}
                   className="h-24 text-center text-muted-foreground"
                 >
-                  No members found.
+                  No members match this search.
                 </TableCell>
               </TableRow>
             ) : (
-              visible.map((member) => (
+              paginate(visible, page).map((member) => (
                 <TableRow
                   key={member.id}
-                  className="cursor-pointer border-border/50 hover:bg-muted/40"
+                  className="cursor-pointer border-foreground/[0.06] hover:bg-foreground/[0.03]"
                 >
                   <TableCell>
                     <Link
                       href={`/members/${member.user_id}`}
                       className="flex items-center gap-3"
                     >
-                      <Avatar className="h-10 w-10 border border-border">
-                        <AvatarImage src={member.photos?.[0] || ""} />
+                      <Avatar className="h-10 w-10 border border-foreground/[0.06]">
+                        <AvatarImage src={member.photos?.[0] ||""} />
                         <AvatarFallback className="bg-muted text-muted-foreground">
                           {getInitials(member.name || member.email)}
                         </AvatarFallback>
                       </Avatar>
                       <div className="space-y-1">
                         <div className="font-medium">
-                          {member.name || "Unknown"}
+                          {member.name ||"Unknown"}
                         </div>
-                        <div className="font-mono text-xs text-muted-foreground">
+                        <div className="font-mono text-[0.86rem] text-muted-foreground">
                           {member.email || member.user_id}
                         </div>
                       </div>
                     </Link>
                   </TableCell>
-                  <TableCell>{member.age ?? "-"}</TableCell>
+                  <TableCell>{member.age ??"-"}</TableCell>
                   <TableCell className="capitalize">
-                    {member.gender || "-"}
+                    {member.gender ||"-"}
                   </TableCell>
                   <TableCell className="capitalize">
-                    {member.interested_in || "everyone"}
+                    {member.interested_in ||"everyone"}
                   </TableCell>
                   <TableCell>
                     {/* Suspended outranks online: someone locked out may still
-                        have an open socket, and "Online" would be the least
+                        have an open socket, and"Online" would be the least
                         useful true thing to say about them. */}
                     {member.suspended_at ? (
                       <Badge
@@ -406,18 +407,18 @@ function MembersView() {
                       </Badge>
                     ) : (
                       <Badge
-                        variant={member.is_online ? "default" : "secondary"}
+                        variant={member.is_online ? "default" :"secondary"}
                         className={
                           member.is_online
                             ? "bg-primary text-primary-foreground hover:bg-primary/80"
-                            : ""
+                            :""
                         }
                       >
-                        {member.is_online ? "Online" : "Offline"}
+                        {member.is_online ? "Online" :"Offline"}
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right text-xs text-muted-foreground">
+                  <TableCell className="text-right text-[0.86rem] text-muted-foreground">
                     <Link
                       href={`/members/${member.user_id}`}
                       className="flex items-center justify-end gap-3"
@@ -431,6 +432,10 @@ function MembersView() {
             )}
           </TableBody>
         </Table>
+
+        <div className="px-4 pb-3">
+          <Pagination page={page} total={visible.length} onPage={setPage} />
+        </div>
       </div>
     </div>
   );

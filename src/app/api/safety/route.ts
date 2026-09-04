@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireAdmin(request);
+    const auth = await requireAdmin(request, "config.safety");
     if (auth.error) return auth.error;
 
     const body = (await request.json()) as Record<string, unknown>;
@@ -182,7 +182,7 @@ export async function POST(request: NextRequest) {
 /** Retire, never delete — an existing flag references the rule that made it. */
 export async function PATCH(request: NextRequest) {
   try {
-    const auth = await requireAdmin(request);
+    const auth = await requireAdmin(request, "config.safety");
     if (auth.error) return auth.error;
 
     const body = (await request.json()) as Record<string, unknown>;

@@ -3,7 +3,7 @@
 import { useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import { RefreshCw, Search, X } from "lucide-react";
 
 /**
@@ -49,7 +49,7 @@ interface DataToolbarProps {
   onRefresh?: () => void;
   loading?: boolean;
 
-  /** Shown as "N of M", so a filter that hides everything is obvious. */
+  /** Shown as"N of M", so a filter that hides everything is obvious. */
   showing?: number;
   total?: number;
 }
@@ -69,7 +69,7 @@ export function DataToolbar({
   showing,
   total,
 }: DataToolbarProps) {
-  // Anything not left on "all", plus a non-empty search. This is what the
+  // Anything not left on"all", plus a non-empty search. This is what the
   // Clear button clears and what the count badge counts.
   const active = useMemo(
     () => Object.entries(values).filter(([, value]) => value && value !== "all"),
@@ -84,10 +84,10 @@ export function DataToolbar({
   const dirty = active.length > 0 || query.trim().length > 0;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[240px] flex-1">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <div className="relative min-w-[15rem] flex-1">
+          <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={query}
             onChange={(event) => onQuery(event.target.value)}
@@ -98,53 +98,63 @@ export function DataToolbar({
             <button
               type="button"
               onClick={() => onQuery("")}
-              className="absolute right-2 top-2.5 text-muted-foreground hover:text-foreground"
+              aria-label="Clear search"
+              className="absolute top-1/2 right-2 -translate-y-1/2 rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-foreground/6 hover:text-foreground"
             >
-              <X className="h-4 w-4" />
+              <X className="size-3" />
             </button>
           )}
         </div>
 
+        {/* Was a native <select>, whose option list is drawn by the OS —
+            so it arrived in the system font at the system size with
+            square corners, looking like another app opening on top of
+            this one. */}
         {sorts.length > 0 && (
-          <select
-            value={sort}
-            onChange={(event) => onSort?.(event.target.value)}
-            className="h-9 rounded-md border bg-background px-3 text-sm"
-          >
-            {sorts.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.label}
-              </option>
-            ))}
-          </select>
+          <Select
+            value={sort ?? null}
+            onChange={(value) => onSort?.(value)}
+            options={sorts.map((entry) => ({
+              value: entry.id,
+              label: entry.label,
+            }))}
+            className="w-[11rem]"
+            align="end"
+          />
         )}
 
         {dirty && (
           <Button variant="ghost" size="sm" onClick={clear}>
             Clear
-            <Badge variant="secondary" className="ml-1.5">
+            <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[0.8rem] font-medium">
               {active.length + (query.trim() ? 1 : 0)}
-            </Badge>
+            </span>
           </Button>
         )}
 
         {onRefresh && (
-          <Button variant="outline" size="icon" onClick={onRefresh} disabled={loading}>
-            <RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={onRefresh}
+            disabled={loading}
+            aria-label="Refresh"
+          >
+            <RefreshCw className={loading ? "animate-spin" : undefined} />
           </Button>
         )}
       </div>
 
       {filters.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
           {filters.map((filter) => (
             <div key={filter.id} className="flex flex-wrap items-center gap-1">
-              <span className="mr-1 text-xs font-medium text-muted-foreground">
+              <span className="mr-1 text-[0.8rem] font-medium tracking-wide text-muted-foreground uppercase">
                 {filter.label}
               </span>
 
               {[{ value: "all", label: "All" }, ...filter.options].map((option) => {
-                const selected = (values[filter.id] ?? "all") === option.value;
+                const selected = (values[filter.id] ??"all") === option.value;
 
                 return (
                   <button
@@ -153,8 +163,8 @@ export function DataToolbar({
                     onClick={() => onFilter?.(filter.id, option.value)}
                     className={
                       selected
-                        ? "rounded-full bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground"
-                        : "rounded-full border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
+                        ? "rounded-full bg-primary px-2.5 py-[0.2rem] text-[1rem] font-medium text-primary-foreground shadow-[0_1px_2px_rgba(26,26,24,0.16)]"
+                        :"rounded-full bg-foreground/[0.05] px-2.5 py-[0.2rem] text-[1rem] text-muted-foreground transition-colors hover:bg-foreground/[0.08] hover:text-foreground"
                     }
                   >
                     {option.label}
@@ -170,7 +180,7 @@ export function DataToolbar({
       )}
 
       {showing !== undefined && total !== undefined && showing !== total && (
-        <p className="text-xs text-muted-foreground">
+        <p className="tnum text-[1rem] text-muted-foreground">
           Showing {showing} of {total}
         </p>
       )}

@@ -20,8 +20,8 @@ import {
  * What an admin can actually do about a member.
  *
  * Grouped by how hard each one is to undo, and labelled with what it does
- * rather than what it is called internally. "Hide from discovery" is a
- * more honest button than "unpublish" for something that quietly removes
+ * rather than what it is called internally."Hide from discovery" is a
+ * more honest button than"unpublish" for something that quietly removes
  * a person from everyone else's deck.
  *
  * Deleting is separated, styled as the exception it is, and requires the
@@ -80,7 +80,7 @@ export function MemberActions({
     <Card>
       <CardContent className="space-y-4 pt-6">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <span className="text-[0.86rem] font-medium uppercase tracking-wider text-muted-foreground">
             Status
           </span>
           {suspended && <Badge variant="destructive">Suspended</Badge>}
@@ -89,31 +89,31 @@ export function MemberActions({
           {state.phone_verified_at && <Badge variant="secondary">Phone verified</Badge>}
           {premium && <Badge>Premium</Badge>}
           {!suspended && published && !faceVerified && !premium && (
-            <span className="text-sm text-muted-foreground">Nothing applied</span>
+            <span className="text-[0.92rem] text-muted-foreground">Nothing applied</span>
           )}
         </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p className="text-[0.92rem] text-destructive">{error}</p>}
 
         <div className="flex flex-wrap gap-2">
           <Button
-            variant={suspended ? "default" : "outline"}
+            variant={suspended ? "default" :"outline"}
             size="sm"
             disabled={busy !== null}
-            onClick={() => run(suspended ? "unsuspend" : "suspend")}
+            onClick={() => run(suspended ? "unsuspend" :"suspend")}
           >
             <Ban className="mr-1.5 h-4 w-4" />
-            {suspended ? "Lift suspension" : "Suspend"}
+            {suspended ? "Lift suspension" :"Suspend"}
           </Button>
 
           <Button
             variant="outline"
             size="sm"
             disabled={busy !== null}
-            onClick={() => run(faceVerified ? "unverify_face" : "verify_face")}
+            onClick={() => run(faceVerified ? "unverify_face" :"verify_face")}
           >
             <BadgeCheck className="mr-1.5 h-4 w-4" />
-            {faceVerified ? "Remove face badge" : "Verify face"}
+            {faceVerified ? "Remove face badge" :"Verify face"}
           </Button>
 
           {!state.phone_verified_at && (
@@ -132,16 +132,16 @@ export function MemberActions({
             variant="outline"
             size="sm"
             disabled={busy !== null}
-            onClick={() => run(published ? "unpublish" : "republish")}
+            onClick={() => run(published ? "unpublish" :"republish")}
           >
             <EyeOff className="mr-1.5 h-4 w-4" />
-            {published ? "Hide from discovery" : "Return to discovery"}
+            {published ? "Hide from discovery" :"Return to discovery"}
           </Button>
         </div>
 
         <div className="flex flex-wrap items-end gap-4 border-t pt-4">
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Roses</label>
+            <label className="text-[0.86rem] font-medium text-muted-foreground">Roses</label>
             <div className="flex gap-1">
               <Input
                 type="number"
@@ -164,11 +164,11 @@ export function MemberActions({
               </Button>
             </div>
             {/* Negative deducts, through the same ledger entry. */}
-            <p className="text-xs text-muted-foreground">Negative to deduct</p>
+            <p className="text-[1rem] leading-relaxed text-muted-foreground">Negative to deduct</p>
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground">Premium</label>
+            <label className="text-[0.86rem] font-medium text-muted-foreground">Premium</label>
             <div className="flex gap-1">
               <Input
                 type="number"
@@ -197,7 +197,7 @@ export function MemberActions({
               )}
             </div>
             {premium && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-[1rem] leading-relaxed text-muted-foreground">
                 Until {new Date(state.premium_until!).toLocaleDateString()}
               </p>
             )}
@@ -207,7 +207,7 @@ export function MemberActions({
         {/* Everything above is reversible from this panel. This is not. */}
         <div className="flex flex-wrap items-center gap-2 border-t border-destructive/30 pt-4">
           <Trash2 className="h-4 w-4 text-destructive" />
-          <span className="text-sm text-muted-foreground">
+          <span className="text-[0.92rem] text-muted-foreground">
             Delete this account and everything attached to it.
           </span>
           <Input

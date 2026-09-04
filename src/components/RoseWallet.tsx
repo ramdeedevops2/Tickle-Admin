@@ -1,16 +1,18 @@
 "use client";
-
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { adminFetch } from "@/lib/adminFetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PagedList } from "@/components/ui/paged-list";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { useConfirm } from "@/components/ui/confirm";
 
 /**
  * One member's Rose balance and ledger.
  *
  * Roses are bought with real money, so the ledger is the point of this
- * component rather than the balance. "My roses vanished" is a question with
+ * component rather than the balance."My roses vanished" is a question with
  * an answer, and this is where it lives.
  *
  * Roses are the currency. Hearts are the things left at venues — unrelated,
@@ -54,6 +56,7 @@ function formatDateTime(value: string) {
 }
 
 export function RoseWallet({ userId }: { userId: string }) {
+  const confirm = useConfirm();
   const [data, setData] = useState<Payload | null>(null);
   const [amount, setAmount] = useState("");
   const [busy, setBusy] = useState(false);
@@ -68,9 +71,7 @@ export function RoseWallet({ userId }: { userId: string }) {
     else setData(data);
   }, [userId]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useLoadOnMount(load);
 
   const grant = useCallback(
     async (sign: 1 | -1) => {
@@ -82,11 +83,14 @@ export function RoseWallet({ userId }: { userId: string }) {
       }
 
       if (
-        !window.confirm(
-          `${value > 0 ? "Grant" : "Remove"} ${Math.abs(value)} roses ${
-            value > 0 ? "to" : "from"
-          } ${data?.profile.name ?? "this member"}? It is recorded in their ledger.`,
-        )
+        !(await confirm({
+          title: `${value > 0 ? "Grant" : "Take back"} ${Math.abs(value)} roses?`,
+          body: `${value > 0 ? "Given to" : "Taken from"} ${
+            data?.profile.name ?? "this member"
+          }, and recorded in their history with your name against it.`,
+          confirmLabel: value > 0 ? "Grant them" : "Take them",
+          tone: value > 0 ? "default" : "danger",
+        }))
       ) {
         return;
       }
@@ -107,16 +111,24 @@ export function RoseWallet({ userId }: { userId: string }) {
 
       setBusy(false);
     },
-    [amount, userId, data, load],
+    [amount, userId, data, load, confirm],
   );
 
   if (!data) return null;
 
   return (
-    <Card className="border-border/50 bg-card">
+    <Card className="border-foreground/[0.06] bg-card">
       <CardHeader className="flex flex-row items-baseline justify-between space-y-0">
-        <CardTitle className="text-sm font-medium text-muted-foreground">Roses</CardTitle>
-        <span className="text-2xl font-black tracking-tight">🌹 {data.profile.roses}</span>
+        <CardTitle className="text-[0.92rem] font-medium text-muted-foreground">
+          Roses
+        </CardTitle>
+        <p className="text-[0.86rem] leading-relaxed text-muted-foreground">
+          What this member has, what they have spent, and anything you have
+          granted them.
+        </p>
+        <span className="tnum text-[1.6rem] font-light tracking-tight">
+          🌹 {data.profile.roses}
+        </span>
       </CardHeader>
 
       <CardContent className="space-y-4">
@@ -125,13 +137,12 @@ export function RoseWallet({ userId }: { userId: string }) {
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
             placeholder="Amount"
-            className="rounded-none border border-border bg-transparent"
           />
           <Button
             variant="outline"
             onClick={() => grant(1)}
             disabled={busy}
-            className="rounded-none border-border/50 text-xs uppercase tracking-[0.2em]"
+            className="border-foreground/[0.06] text-[0.86rem]"
           >
             Grant
           </Button>
@@ -139,28 +150,32 @@ export function RoseWallet({ userId }: { userId: string }) {
             variant="outline"
             onClick={() => grant(-1)}
             disabled={busy}
-            className="rounded-none border-destructive/40 text-xs uppercase tracking-[0.2em] text-destructive"
+            className="border-destructive/40 text-[0.86rem] text-destructive"
           >
             Remove
           </Button>
         </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <p className="text-[0.92rem] text-destructive">{error}</p>}
 
         {data.ledger.length === 0 ? (
-          <p className="py-4 text-center text-sm text-muted-foreground">No movements yet.</p>
+          <p className="py-4 text-center text-[0.92rem] text-muted-foreground">
+            No movements yet.
+          </p>
         ) : (
-          <div className="space-y-1">
-            {data.ledger.slice(0, 12).map((entry) => (
+          <PagedList items={data.ledger} perPage={12} className="space-y-1">
+            {(entry) => (
               <div
                 key={entry.id}
-                className="flex items-center justify-between border-b border-border/50 py-2 text-sm last:border-0"
+                className="flex items-center justify-between border-b border-foreground/[0.06] py-2 text-[0.92rem] last:border-0"
               >
                 <span>{REASON_LABEL[entry.reason] ?? entry.reason}</span>
                 <span className="flex items-center gap-3">
                   <span
                     className={`tabular-nums ${
-                      entry.amount > 0 ? "text-emerald-600" : "text-muted-foreground"
+                      entry.amount > 0
+                        ? "text-emerald-600"
+                        : "text-muted-foreground"
                     }`}
                   >
                     {entry.amount > 0 ? "+" : ""}
@@ -169,13 +184,13 @@ export function RoseWallet({ userId }: { userId: string }) {
                   <span className="w-10 text-right tabular-nums text-muted-foreground">
                     {entry.balance_after}
                   </span>
-                  <span className="text-xs text-muted-foreground">
+                  <span className="text-[1rem] leading-relaxed text-muted-foreground">
                     {formatDateTime(entry.created_at)}
                   </span>
                 </span>
               </div>
-            ))}
-          </div>
+            )}
+          </PagedList>
         )}
       </CardContent>
     </Card>

@@ -1,11 +1,23 @@
 "use client";
-
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { PagedList } from "@/components/ui/paged-list";
 import { adminCounts, adminTable } from "@/lib/adminFetch";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Activity, Heart, MessageSquare, RefreshCw, Users } from "lucide-react";
-import ReactECharts from "echarts-for-react";
+import type { EChartsOption } from "echarts";
+import { Chart, lineSeries } from "@/components/ui/chart";
+import { StatStrip } from "@/components/ui/stat-strip";
+import { Skeleton, SkeletonStats } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { MetricsBand } from "@/components/MetricsBand";
+import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { useNames } from "@/lib/useNames";
 
 type ProfileRow = {
   created_at: string;
@@ -19,7 +31,10 @@ type MatchRow = {
 type FeedItem = {
   id: string;
   label: string;
-  detail: string;
+  /** Who it happened to. Named at render time, once their profile is in. */
+  people: string[];
+  /** The word between two people: "and", "liked", "passed on". */
+  join?: string;
   created_at: string;
 };
 
@@ -75,10 +90,6 @@ function formatDateTime(value: string) {
       });
 }
 
-function shortId(value: string) {
-  return value.length > 12 ? `${value.slice(0, 8)}...${value.slice(-4)}` : value;
-}
-
 export default function PulseDashboard() {
   const [profiles, setProfiles] = useState<ProfileRow[]>([]);
   const [matches, setMatches] = useState<MatchRow[]>([]);
@@ -89,6 +100,9 @@ export default function PulseDashboard() {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // The feed is people doing things to each other, so it needs names.
+  const { resolve: resolveNames, nameOf } = useNames();
 
   const loadPulse = useCallback(async () => {
     setLoading(true);
@@ -120,7 +134,10 @@ export default function PulseDashboard() {
         "passes",
         { table: "dailies", gt: ["expires_at", new Date().toISOString()] },
       ]),
-      adminTable<ProfileRow>("profiles", { select: "created_at, is_online", limit: 5000 }),
+      adminTable<ProfileRow>("profiles", {
+        select: "created_at, is_online",
+        limit: 5000,
+      }),
       adminTable<MatchRow>("matches", { select: "created_at", limit: 5000 }),
       adminTable<RecentMessageRow>("messages", {
         select: "id, match_id, sender_id, created_at",
@@ -179,7 +196,7 @@ export default function PulseDashboard() {
     ).map((message) => ({
       id: `message-${message.id}`,
       label: "Message",
-      detail: `sender ${shortId(message.sender_id)} / match ${shortId(message.match_id)}`,
+      people: [message.sender_id],
       created_at: message.created_at,
     }));
     const recentMatches = (
@@ -187,14 +204,16 @@ export default function PulseDashboard() {
     ).map((match) => ({
       id: `match-${match.id}`,
       label: "Match",
-      detail: `${shortId(match.user1_id)} + ${shortId(match.user2_id)}`,
+      people: [match.user1_id, match.user2_id],
+      join: "and",
       created_at: match.created_at,
     }));
     const recentLikes = ((recentLikesResult.data ?? []) as RecentLikeRow[]).map(
       (like) => ({
         id: `like-${like.id}`,
         label: "Like",
-        detail: `${shortId(like.liker_id)} -> ${shortId(like.liked_id)}`,
+        people: [like.liker_id, like.liked_id],
+        join: "liked",
         created_at: like.created_at,
       }),
     );
@@ -203,7 +222,8 @@ export default function PulseDashboard() {
     ).map((pass) => ({
       id: `pass-${pass.id}`,
       label: "Pass",
-      detail: `${shortId(pass.passer_id)} -> ${shortId(pass.passed_id)}`,
+      people: [pass.passer_id, pass.passed_id],
+      join: "passed on",
       created_at: pass.created_at,
     }));
     const recentStories = (
@@ -211,9 +231,21 @@ export default function PulseDashboard() {
     ).map((story) => ({
       id: `story-${story.id}`,
       label: "Daily",
-      detail: `user ${shortId(story.user_id)}`,
+      people: [story.user_id],
       created_at: story.created_at,
     }));
+
+    // Names for everybody the feed mentions, in one lookup. The feed
+    // renders immediately and fills in as they arrive.
+    void resolveNames(
+      [
+        ...recentMessages,
+        ...recentMatches,
+        ...recentLikes,
+        ...recentPasses,
+        ...recentStories,
+      ].flatMap((item) => item.people),
+    );
 
     setFeed(
       [
@@ -230,11 +262,9 @@ export default function PulseDashboard() {
         .slice(0, 10),
     );
     setLoading(false);
-  }, []);
+  }, [resolveNames]);
 
-  useEffect(() => {
-    void Promise.resolve().then(loadPulse);
-  }, [loadPulse]);
+  useLoadOnMount(loadPulse);
 
   const stats = useMemo(() => {
     const today = startOfDay(new Date());
@@ -257,12 +287,22 @@ export default function PulseDashboard() {
     };
   }, [profiles, matches, messagesCount, likesCount, passesCount, storiesCount]);
 
+  /*
+   * Seven days of signups.
+   *
+   * The theme is gone from here entirely — it lived inline and was
+   * written for the old black panel, so every colour in it (white
+   * strokes, a black tooltip) is invisible on the light ground. The
+   * Chart wrapper owns the house style now; this supplies only the
+   * shape of the data.
+   */
   const chartOption = useMemo(() => {
     const days = Array.from({ length: 7 }, (_, index) => {
       const date = startOfDay(new Date());
       date.setDate(date.getDate() - (6 - index));
       return date;
     });
+
     const counts = days.map(
       (day) =>
         profiles.filter((profile) => {
@@ -275,192 +315,165 @@ export default function PulseDashboard() {
     );
 
     return {
-      backgroundColor: "transparent",
-      tooltip: {
-        trigger: "axis",
-        axisPointer: { type: "line" },
-        backgroundColor: "#000",
-        borderColor: "rgba(255,255,255,0.2)",
-        textStyle: { color: "#fff" },
-      },
-      grid: {
-        left: "3%",
-        right: "4%",
-        bottom: "3%",
-        containLabel: true,
-      },
       xAxis: {
-        type: "category",
-        boundaryGap: false,
         data: days.map((day) =>
           day.toLocaleDateString("en-US", { weekday: "short" }),
         ),
-        axisLine: { lineStyle: { color: "rgba(255,255,255,0.2)" } },
-        axisLabel: { color: "#A1A1AA" },
       },
-      yAxis: {
-        type: "value",
-        splitLine: { lineStyle: { color: "rgba(255,255,255,0.1)" } },
-        axisLabel: { color: "#A1A1AA" },
-      },
-      series: [
-        {
-          name: "New Profiles",
-          type: "line",
-          smooth: true,
-          showSymbol: false,
-          lineStyle: { width: 2, color: "#fff" },
-          areaStyle: {
-            color: {
-              type: "linear",
-              x: 0,
-              y: 0,
-              x2: 0,
-              y2: 1,
-              colorStops: [
-                { offset: 0, color: "rgba(255, 255, 255, 0.3)" },
-                { offset: 1, color: "rgba(255, 255, 255, 0)" },
-              ],
-            },
-          },
-          data: counts,
-        },
-      ],
-    };
+      series: [lineSeries("New profiles", counts, "#f0821e", { area: true })],
+    } as EChartsOption;
+  }, [profiles]);
+
+  /* The sparkline under each stat: signups per day, same seven days. */
+  const spark = useMemo(() => {
+    const days = Array.from({ length: 14 }, (_, index) => {
+      const date = startOfDay(new Date());
+      date.setDate(date.getDate() - (13 - index));
+      return date;
+    });
+
+    return days.map(
+      (day) =>
+        profiles.filter((profile) => {
+          const created = new Date(profile.created_at);
+          return (
+            created >= day &&
+            created < new Date(day.getTime() + 24 * 60 * 60 * 1000)
+          );
+        }).length,
+    );
   }, [profiles]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+    <div className="space-y-4">
+      {/* Title row: heading left, actions right, ascending in weight —
+          ghost, then secondary, then the one filled button. */}
+      <div className="flex items-end justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight">Pulse Overview</h2>
-          <p className="text-muted-foreground">
-            Live metrics from profiles, matches, messages, likes, passes, and stories.
+          <h1 className="text-[1.6rem] leading-tight font-medium tracking-tight">
+            Pulse Overview
+          </h1>
+          <p className="mt-0.5 text-[1rem] text-muted-foreground">
+            Live metrics across profiles, matches, messages and activity.
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={loadPulse}
-          disabled={loading}
-          className="rounded-none border-border/50 text-xs uppercase tracking-[0.2em]"
-        >
-          <RefreshCw className="mr-2 size-4" />
+
+        <Button variant="secondary" onClick={loadPulse} disabled={loading}>
+          <RefreshCw className={loading ? "animate-spin" : undefined} />
           Refresh
         </Button>
       </div>
 
-      {error && <div className="text-sm text-destructive">{error}</div>}
+      {error && (
+        <div className="rounded-xl border border-destructive/25 bg-destructive/8 px-3 py-2 text-[0.92rem] text-destructive">
+          {error}
+        </div>
+      )}
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="border border-border/50 bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Total Users
-            </CardTitle>
-            <Users className="h-4 w-4 text-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.totalUsers}</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              public.profiles
-            </p>
-          </CardContent>
-        </Card>
+      {/* One strip, four facts, hairline rules — not four cards. */}
+      {loading ? (
+        <SkeletonStats count={4} />
+      ) : (
+        <StatStrip
+          stats={[
+            {
+              label: "Total members",
+              value: stats.totalUsers,
+              icon: Users,
+              spark,
+            },
+            {
+              label: "Online now",
+              value: stats.activeToday,
+              icon: Activity,
+              tone: "success",
+            },
+            {
+              label: "Matches today",
+              value: stats.matchesToday,
+              icon: Heart,
+            },
+            {
+              label: "Messages sent",
+              value: stats.messages,
+              icon: MessageSquare,
+            },
+          ]}
+        />
+      )}
 
-        <Card className="border border-border/50 bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Online Now
-            </CardTitle>
-            <Activity className="h-4 w-4 text-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.activeToday}</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              profiles.is_online
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-border/50 bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Matches Today
-            </CardTitle>
-            <Heart className="h-4 w-4 text-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.matchesToday}</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {stats.likes} likes / {stats.passes} passes
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card className="border border-border/50 bg-card">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Messages Sent
-            </CardTitle>
-            <MessageSquare className="h-4 w-4 text-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.messages}</div>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {stats.stories} live dailies
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="col-span-4 border border-border/50 bg-card">
+      {/* Asymmetric on purpose: a 50/50 split would read the chart and
+          the feed as equals, and the chart is the subject. */}
+      <div className="grid gap-4 lg:grid-cols-[1.7fr_1fr]">
+        <Card>
           <CardHeader>
-            <CardTitle>User Growth</CardTitle>
+            <CardTitle>User growth</CardTitle>
+            <CardDescription>New profiles over the last 7 days</CardDescription>
           </CardHeader>
-          <CardContent className="h-[300px] pl-2">
-            <ReactECharts
-              option={chartOption}
-              style={{ height: "100%", width: "100%" }}
-            />
+          <CardContent>
+            <Chart option={chartOption} height={260} loading={loading} />
           </CardContent>
         </Card>
-        <Card className="col-span-3 border border-border/50 bg-card">
+
+        <Card>
           <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
+            <CardTitle>Recent activity</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
-              <div className="py-12 text-center text-sm text-muted-foreground">
-                Loading activity...
-              </div>
-            ) : feed.length === 0 ? (
-              <div className="py-12 text-center text-sm text-muted-foreground">
-                No recent activity found.
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {feed.map((item) => (
-                  <div key={item.id} className="flex items-center gap-4">
-                    <div className="h-2 w-2 bg-foreground" />
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <p className="truncate text-sm font-medium leading-none">
-                        {item.label}
-                      </p>
-                      <p className="truncate text-sm text-muted-foreground">
-                        {item.detail}
-                      </p>
-                    </div>
-                    <div className="shrink-0 text-xs text-muted-foreground">
-                      {formatDateTime(item.created_at)}
-                    </div>
+              <div className="space-y-2.5">
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <div key={index} className="flex items-center gap-2.5">
+                    <Skeleton className="size-1.5 shrink-0 rounded-full" />
+                    <Skeleton className="h-3 flex-1 rounded-lg" />
+                    <Skeleton className="h-2.5 w-10 shrink-0 rounded-lg" />
                   </div>
                 ))}
+              </div>
+            ) : feed.length === 0 ? (
+              <p className="py-10 text-center text-[0.92rem] text-muted-foreground">
+                No recent activity.
+              </p>
+            ) : (
+              <div className="-mx-1.5 space-y-0.5">
+                <PagedList
+                  items={feed}
+                  perPage={20}
+                  className="divide-y divide-foreground/[0.06]"
+                >
+                  {(item) => (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-foreground/[0.03]"
+                    >
+                      <span className="size-1.5 shrink-0 rounded-full bg-foreground/25" />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-[0.92rem] leading-tight font-medium">
+                          {item.label}
+                        </p>
+                        <p className="truncate text-[1rem] text-muted-foreground">
+                          {nameOf(item.people[0])}
+                          {item.people[1] && (
+                            <>
+                              <span className="px-1">{item.join ?? "and"}</span>
+                              {nameOf(item.people[1])}
+                            </>
+                          )}
+                        </p>
+                      </div>
+                      <span className="tnum shrink-0 text-[0.8rem] text-muted-foreground">
+                        {formatDateTime(item.created_at)}
+                      </span>
+                    </div>
+                  )}
+                </PagedList>
               </div>
             )}
           </CardContent>
         </Card>
       </div>
+
+      <MetricsBand />
     </div>
   );
 }

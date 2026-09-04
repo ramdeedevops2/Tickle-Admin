@@ -2,10 +2,33 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * The Botrix system.
+ *
+ * The panel was pure black, square-cornered and maximum contrast. This
+ * is the inverse on every axis: a warm off-white ground, heavily rounded
+ * shapes, and contrast spent almost nowhere.
+ *
+ * That last part is the whole idea and the easiest to lose. Nothing here
+ * is #000 or #FFF, borders are hairlines at 6% rather than lines, and
+ * shadows are wide and faint instead of tight and dark. Because so
+ * little is loud, the two things that are — the near-black primary
+ * button and the active nav pill — are found instantly. Add a second
+ * saturated colour to the chrome and that stops being true.
+ *
+ * Colour belongs to data. Charts, gauges and status dots may be
+ * saturated; the frame around them may not.
+ */
+
 @theme {
+  /*
+   * Geometric sans, matching the reference. Each has a real fallback:
+   * the stack has to survive the webfont failing, and system-ui alone
+   * would drop to a humanist face and lose the whole character.
+   */
   --font-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
-    system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    var(--font-poppins), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    system-ui, Roboto, Helvetica, Arial, sans-serif;
   --font-mono:
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
     "Courier New", monospace;
@@ -38,9 +61,26 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
+  /* Data colours. Charts and status only — never chrome. */
+  --color-viz-1: var(--viz-1);
+  --color-viz-2: var(--viz-2);
+  --color-viz-3: var(--viz-3);
+  --color-viz-4: var(--viz-4);
+  --color-viz-5: var(--viz-5);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  /* Tickle crimson, kept as a brand token. Deliberately not --primary:
+     in this system the primary action is near-black and crimson is
+     reserved for brand moments, so the two never compete. */
+  --color-brand: var(--brand);
+
+  --radius-sm: calc(var(--radius) - 6px);
+  --radius-md: calc(var(--radius) - 3px);
   --radius-lg: var(--radius);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-sm: calc(var(--radius) - 4px);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 10px);
 
   --color-sidebar: var(--sidebar-background);
   --color-sidebar-foreground: var(--sidebar-foreground);
@@ -54,45 +94,76 @@
 
 @layer base {
   :root {
-    /* Pure Black & White Theme */
-    --background: #000000;
-    --foreground: #ffffff;
+    /* The ground: warm off-white with a faint green cast, not grey. */
+    --background: #eceee8;
+    --foreground: #1a1a18;
 
-    --card: #000000;
-    --card-foreground: #ffffff;
+    /* Cards sit on the ground as near-white, never pure white — pure
+       white against this ground reads as a hole rather than a surface. */
+    --card: #fbfbf9;
+    --card-foreground: #1a1a18;
 
-    --popover: #000000;
-    --popover-foreground: #ffffff;
+    --popover: #ffffff;
+    --popover-foreground: #1a1a18;
 
-    --primary: #ffffff;
-    --primary-foreground: #000000;
+    /* The one loud thing on the screen. */
+    --primary: #1c1c1a;
+    --primary-foreground: #fbfbf9;
 
-    --secondary: #0f172a;
-    --secondary-foreground: #ffffff;
+    --secondary: #ffffff;
+    --secondary-foreground: #1a1a18;
 
-    --muted: #111111;
-    --muted-foreground: #a1a1aa;
+    --muted: #e3e5df;
+    --muted-foreground: #7c7d76;
 
-    --accent: #111111;
-    --accent-foreground: #ffffff;
+    --accent: #e8eae3;
+    --accent-foreground: #1a1a18;
 
-    --destructive: #ffffff;
-    --destructive-foreground: #000000;
+    --destructive: #d64545;
+    --destructive-foreground: #ffffff;
 
-    --border: rgba(255, 255, 255, 0.2);
-    --input: rgba(255, 255, 255, 0.2);
-    --ring: rgba(255, 255, 255, 0.5);
+    /* Hairlines, not lines. */
+    --border: rgba(26, 26, 24, 0.08);
+    --input: rgba(26, 26, 24, 0.12);
+    --ring: rgba(26, 26, 24, 0.28);
 
-    --radius: 0.25rem; /* Sharper corners */
+    --success: #2e9e5b;
+    --warning: #e08a1e;
 
-    --sidebar-background: #000000;
-    --sidebar-foreground: #a1a1aa;
-    --sidebar-primary: #ffffff;
-    --sidebar-primary-foreground: #000000;
-    --sidebar-accent: #111111;
-    --sidebar-accent-foreground: #ffffff;
-    --sidebar-border: rgba(255, 255, 255, 0.15);
-    --sidebar-ring: rgba(255, 255, 255, 0.5);
+    /*
+     * Series colours, in fixed order — slot 1 is always the first series,
+     * never cycled or reassigned when a filter changes the series count.
+     *
+     * These replace a hand-picked set that failed a colour-blindness
+     * check: its red and green sat 3.5 apart for deuteranopia (8 is the
+     * target), so the two most common series in this panel were the two
+     * a red-green colourblind admin could not tell apart. Slot 5 was also
+     * so desaturated it read as the grid.
+     *
+     * Verified with the dataviz validator in both modes. Do not nudge a
+     * value by eye — re-run it.
+     */
+    --viz-1: #f0821e;
+    --viz-2: #5b4be8;
+    --viz-3: #2e9e5b;
+    --viz-4: #d64545;
+    --viz-5: #9a9b94;
+
+    --brand: #ee2746;
+
+    /* Generously rounded. Everything derives from this one number. */
+    --radius: 0.875rem;
+
+    /* The sidebar rails read as part of the ground, not as panels
+       stuck to it — hence no fill of their own. */
+    --sidebar-background: transparent;
+    --sidebar-foreground: #6f706a;
+    --sidebar-primary: #1c1c1a;
+    --sidebar-primary-foreground: #fbfbf9;
+    --sidebar-accent: rgba(26, 26, 24, 0.05);
+    --sidebar-accent-foreground: #1a1a18;
+    --sidebar-border: rgba(26, 26, 24, 0.07);
+    --sidebar-ring: rgba(26, 26, 24, 0.25);
   }
 }
 
@@ -100,10 +171,210 @@
   * {
     @apply border-border;
   }
+
+  /*
+   * 14px base, down from the browser's 16.
+   *
+   * Asked for directly — more on screen at once — and it is what makes
+   * the reference read as a dense control panel rather than a website.
+   * It works here because the panel is a desktop admin tool viewed at a
+   * desk; the same size on the phone app would be indefensible.
+   */
+  html {
+    font-size: 14px;
+  }
+
+  /*
+   * The document itself never scrolls — see the note in the dashboard
+   * layout. Without this the page grows a scrollbar the fixed rails sit
+   * underneath, which is what made the right rail look clipped.
+   */
+  html,
+  body {
+    height: 100%;
+    overflow: hidden;
+  }
+
   body {
     @apply bg-background text-foreground;
     font-feature-settings:
       "rlig" 1,
       "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /*
+   * A soft wash behind everything, so the frosted surfaces have
+   * something to be frosted against. Fixed rather than scrolling: it is
+   * lighting, not content.
+   */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    background:
+      radial-gradient(60rem 40rem at 12% -10%, rgba(180, 205, 175, 0.5), transparent 60%),
+      radial-gradient(50rem 35rem at 105% 10%, rgba(196, 205, 225, 0.45), transparent 60%),
+      radial-gradient(45rem 40rem at 50% 115%, rgba(226, 214, 196, 0.4), transparent 60%);
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  [role="tab"],
+  [role="option"],
+  [role="switch"],
+  a[href],
+  label:has(input:not(:disabled)),
+  summary,
+  select:not(:disabled) {
+    cursor: pointer;
+  }
+
+  /* A disabled control should look unavailable, not merely inert. */
+  button:disabled,
+  [aria-disabled="true"],
+  input:disabled,
+  select:disabled,
+  textarea:disabled {
+    cursor: not-allowed;
+  }
+
+  /* Thin, and only visible while in use. A permanent heavy scrollbar in
+     a dense panel is a stripe of chrome down every scrolling region. */
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: rgba(26, 26, 24, 0.14);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(26, 26, 24, 0.26);
+  }
+}
+
+@layer components {
+  /*
+   * The big panel.
+   *
+   * L1 in the depth scale: the large surface the content sits inside.
+   * The shadow is wide and nearly invisible on purpose — depth here
+   * comes from the fill and the hairline, and a tight dark shadow would
+   * make it look stuck on rather than floating.
+   *
+   * It was frosted glass until the blur came out of the panel entirely.
+   * Nothing scrolls behind a fixed rail anyway, so the filter was paying
+   * for an effect nobody could see; the fill went near-opaque to keep the
+   * surface reading as a surface without it.
+   */
+  .surface-panel {
+    background-color: rgba(251, 251, 249, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    box-shadow:
+      0 1px 2px rgba(26, 26, 24, 0.03),
+      0 12px 40px rgba(26, 26, 24, 0.06);
+  }
+
+  /* L2: a card inside the panel. Fainter still — it is one level down,
+     not a second panel. */
+  .surface-card {
+    background-color: rgba(251, 251, 249, 0.86);
+    border: 1px solid rgba(26, 26, 24, 0.06);
+    box-shadow: 0 1px 2px rgba(26, 26, 24, 0.03);
+  }
+
+  /* L3: the only pronounced shadow in the system, for things that
+     genuinely float — tooltips, popovers, toasts. It reads as lifted
+     precisely because nothing else does. */
+  .surface-float {
+    background-color: #ffffff;
+    border: 1px solid rgba(26, 26, 24, 0.07);
+    box-shadow:
+      0 2px 4px rgba(26, 26, 24, 0.04),
+      0 12px 32px rgba(26, 26, 24, 0.12);
+  }
+
+  /* Hairline column rules, as used between the KPI stats. A divider
+     rather than four separate cards: it says "one object, four facts". */
+  .rule-x {
+    border-left: 1px solid rgba(26, 26, 24, 0.08);
+  }
+}
+
+@layer utilities {
+  /*
+   * Skeletons sweep rather than blink.
+   *
+   * animate-pulse fades the whole block in and out, which at this
+   * density reads as the page flickering. A sweep travels, so several
+   * loading blocks together look like one thing arriving.
+   */
+  @keyframes skeleton-sweep {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  .animate-skeleton {
+    background-image: linear-gradient(
+      90deg,
+      rgba(26, 26, 24, 0.05) 0%,
+      rgba(26, 26, 24, 0.05) 40%,
+      rgba(26, 26, 24, 0.11) 50%,
+      rgba(26, 26, 24, 0.05) 60%,
+      rgba(26, 26, 24, 0.05) 100%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-sweep 1.4s ease-in-out infinite;
+  }
+
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  @keyframes toast-out {
+    from {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+    to {
+      opacity: 0;
+      transform: translateY(6px) scale(0.97);
+    }
+  }
+
+  .animate-toast-in {
+    animation: toast-in 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .animate-toast-out {
+    animation: toast-out 160ms ease-in forwards;
+  }
+
+  /* Numerals that line up in columns. Tabular figures matter more here
+     than anywhere else in the app — a table of proportional digits
+     jitters as values change. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
   }
 }

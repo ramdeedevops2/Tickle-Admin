@@ -89,6 +89,29 @@ const READABLE = new Set([
   "filter_groups",
   "filter_definitions",
   "user_filters",
+  "safe_dates",
+  "double_dates",
+  "referral_milestones",
+  "referral_awards",
+  "promo_codes",
+  "cities",
+  "city_waitlist",
+  "city_missions",
+  "notification_categories",
+  "report_reasons",
+  "content_policy",
+  "content_flags",
+  "support_tickets",
+  "support_messages",
+  "admin_audit",
+  "admin_roles",
+  "admin_permissions",
+  "role_permissions",
+  "admin_alerts",
+  "alert_events",
+  "purchase_attempts",
+  "retention_policy",
+  "config_history",
 ]);
 
 /** A ceiling, so a missing limit cannot pull a million rows into a browser. */
@@ -125,7 +148,7 @@ export async function GET(request: NextRequest) {
 
     const inColumn = params.get("in");
     const inValues = params.get("values");
-    if (inColumn && inValues) query = query.in(inColumn, inValues.split(","));
+    if (inColumn && inValues) query = query.in(inColumn, inValues.split(", "));
 
     // "greater than", for the live-stories window and anything else with an
     // expiry. Only one, and only this comparison — the panel has never

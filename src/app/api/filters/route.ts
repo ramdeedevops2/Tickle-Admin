@@ -38,10 +38,53 @@ export async function GET(request: NextRequest) {
       counts[row.filter_key] = (counts[row.filter_key] ?? 0) + 1;
     }
 
+    /*
+     * How many options each filter offers.
+     *
+     * A choice or multi filter does not carry its own list — it borrows
+     * the matching profile field's, so the app can never offer a value
+     * nobody can set on their own profile. The catch is that a filter
+     * whose key matches no field, or matches an empty one, shows
+     * "Nothing to choose from yet" in the app with nothing on this page
+     * to say why. These counts are what makes that visible.
+     */
+    const { data: options } = await auth.supabase
+      .from("profile_field_options")
+      .select("field_key, value, active")
+      .order("sort_order");
+
+    const optionCounts: Record<string, number> = {};
+
+    /*
+     * The actual option labels, not just how many there are.
+     *
+     * The preview on the page showed "Option 1, Option 2" — placeholder
+     * text standing in for values that were already sitting in this
+     * table. A preview made of invented data is worse than no preview:
+     * it looks like the answer and is not.
+     *
+     * Retired options are excluded. They still exist on profiles that
+     * chose them, but the app stops offering them, so a preview showing
+     * one would be showing something no member can pick.
+     */
+    const optionValues: Record<string, string[]> = {};
+
+    for (const row of (options ?? []) as {
+      field_key: string;
+      value: string;
+      active: boolean;
+    }[]) {
+      if (!row.active) continue;
+      optionCounts[row.field_key] = (optionCounts[row.field_key] ?? 0) + 1;
+      (optionValues[row.field_key] ??= []).push(row.value);
+    }
+
     return NextResponse.json({
       groups: groups.data ?? [],
       definitions: definitions.data ?? [],
       usage: counts,
+      options: optionCounts,
+      optionValues,
       kinds: KINDS,
     });
   } catch (error) {

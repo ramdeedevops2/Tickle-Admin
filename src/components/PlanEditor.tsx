@@ -1,9 +1,9 @@
 "use client";
-
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import { adminFetch } from "@/lib/adminFetch";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useLoadOnMount } from "@/lib/useLoadOnMount";
 
 /**
  * Free and Premium limits.
@@ -75,7 +75,7 @@ export function PlanEditor() {
     const { data, error } = await adminFetch<Payload>("/api/plans");
 
     if (error || !data) {
-      setError(error ?? "Failed to load plans.");
+      setError(error ??"Failed to load plans.");
       return;
     }
 
@@ -92,9 +92,7 @@ export function PlanEditor() {
     );
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  useLoadOnMount(load);
 
   const save = useCallback(
     async (plan: Plan) => {
@@ -133,51 +131,48 @@ export function PlanEditor() {
 
   return (
     <div className="space-y-6">
-      <h2 className="border-b border-border/50 pb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-        Plans
-      </h2>
 
-      <p className="text-xs text-muted-foreground">
+      <p className="text-[1rem] leading-relaxed text-muted-foreground">
         {data.activePremium} active premium
         {data.lapsedPremium > 0 && `, ${data.lapsedPremium} lapsed`}
       </p>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      {error && <p className="text-[0.92rem] text-destructive">{error}</p>}
 
       <div className="grid gap-10 lg:grid-cols-2">
         {data.plans.map((plan) => (
           <div key={plan.key} className="space-y-6" id={`plan-${plan.key}`}>
             <div className="flex items-baseline justify-between">
-              <h3 className="text-sm font-bold uppercase tracking-[0.2em]">{plan.label}</h3>
+              <h3 className="text-[0.92rem] font-bold">{plan.label}</h3>
               <Button
                 variant="outline"
                 onClick={() => save(plan)}
                 disabled={saving === plan.key}
-                className="h-9 rounded-none border-border/50 text-[10px] uppercase tracking-[0.2em]"
+                className="h-9 border-foreground/[0.06] text-[0.86rem]"
               >
-                {saving === plan.key ? "Saving" : "Save"}
+                {saving === plan.key ? "Saving" :"Save"}
               </Button>
             </div>
 
             {FIELDS.map((f) => (
               <div key={f.field} id={`${plan.key}-${f.anchor}`} className="group space-y-2 scroll-mt-24">
-                <label className="block text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground transition-colors group-focus-within:text-foreground">
+                <label className="block text-[0.8rem] font-bold text-muted-foreground transition-colors group-focus-within:text-foreground">
                   {f.label}
                 </label>
 
                 <Input
-                  value={draft[`${plan.key}.${f.field}`] ?? ""}
+                  value={draft[`${plan.key}.${f.field}`] ??""}
                   onChange={(event) =>
                     setDraft((prev) => ({
                       ...prev,
                       [`${plan.key}.${f.field}`]: event.target.value,
                     }))
                   }
-                  placeholder={f.field === "daily_interactions" ? "Unlimited" : ""}
-                  className="h-12 rounded-none border-0 border-b border-border/50 bg-transparent px-0 font-mono text-lg focus-visible:border-foreground focus-visible:ring-0"
+                  placeholder={f.field === "daily_interactions" ? "Unlimited" :""}
+                  className="h-12 px-3 font-mono text-lg"
                 />
 
-                <p className="text-xs text-muted-foreground">{f.hint}</p>
+                <p className="text-[1rem] leading-relaxed text-muted-foreground">{f.hint}</p>
               </div>
             ))}
           </div>

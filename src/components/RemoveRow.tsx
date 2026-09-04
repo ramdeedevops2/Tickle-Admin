@@ -51,14 +51,14 @@ export function RemoveRow({
 
   return (
     <Button
-      variant={armed ? "destructive" : "ghost"}
+      variant={armed ? "destructive" :"ghost"}
       size="sm"
       disabled={busy}
       onClick={remove}
       title={label}
     >
       <Trash2 className="h-4 w-4" />
-      {armed && <span className="ml-1 text-xs">Sure?</span>}
+      {armed && <span className="ml-1 text-[0.86rem]">Sure?</span>}
     </Button>
   );
 }

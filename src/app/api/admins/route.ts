@@ -29,7 +29,7 @@ async function findUserIdByEmail(
 
 export async function POST(request: NextRequest) {
   try {
-    const auth = await requireAdmin(request);
+    const auth = await requireAdmin(request, "admins.manage");
     if (auth.error) return auth.error;
 
     const body = (await request.json()) as {
@@ -85,7 +85,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const auth = await requireAdmin(request);
+    const auth = await requireAdmin(request, "admins.manage");
     if (auth.error) return auth.error;
 
     const { searchParams } = new URL(request.url);

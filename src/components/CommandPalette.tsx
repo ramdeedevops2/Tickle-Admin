@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { Search, CornerDownLeft, ArrowUp, ArrowDown, Loader2 } from "lucide-react";
@@ -9,6 +10,7 @@ import {
   searchCommands,
   type CommandEntry,
 } from "@/lib/commandRegistry";
+import { useModalLock } from "@/lib/useModalLock";
 
 /**
  * Find anything in the panel.
@@ -16,7 +18,7 @@ import {
  * Two kinds of result, deliberately kept apart and always in this order:
  * what the panel *can do* comes first, and matching records come second.
  *
- * That order is the whole point. Typing "safety" should open the moderation
+ * That order is the whole point. Typing"safety" should open the moderation
  * page, not offer a member whose bio happens to contain the word — and a
  * palette that mixes the two by relevance score gets that wrong regularly,
  * because a data row will always match more text than a page title.
@@ -28,6 +30,8 @@ interface MemberHit {
   email: string | null;
   photos: string[] | null;
 }
+
+const EMPTY_MEMBERS: MemberHit[] = [];
 
 const RECORD_DEBOUNCE_MS = 220;
 
@@ -43,23 +47,52 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const latest = useRef(0);
 
+  // Nothing behind the palette scrolls, clicks or takes focus while it
+  // is open.
+  useModalLock(open);
+
   const commands = useMemo(() => searchCommands(query), [query]);
+
+  /*
+   * People matching the query, or nothing while it is too short.
+   *
+   * Derived rather than cleared. The effect below used to setMembers([])
+   * for a one-character query, which meant the previous results stayed
+   * on screen for a render before being wiped — and the wipe was a
+   * second render doing nothing but forgetting.
+   */
+  const shownMembers = query.trim().length < 2 ? EMPTY_MEMBERS : members;
 
   // One flat list, so arrow keys move through both sections without the
   // caller having to know where one ends.
   const results = useMemo(
     () => [
       ...commands.map((entry) => ({ type: "command" as const, entry })),
-      ...members.map((member) => ({ type: "member" as const, member })),
+      ...shownMembers.map((member) => ({ type: "member" as const, member })),
     ],
-    [commands, members]
+    [commands, shownMembers]
   );
+
+  /*
+   * Closing clears the palette.
+   *
+   * This used to be an effect watching `open` go false, which meant the
+   * component rendered once showing the old query and again showing it
+   * empty. Doing it where the close happens is one render, and is the
+   * pattern React documents for state that follows from an event.
+   */
+  const close = useCallback(() => {
+    setOpen(false);
+    setQuery("");
+    setMembers([]);
+    setActive(0);
+  }, []);
 
   // ─── Opening ────────────────────────────────────────────
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      // Cmd+K on a Mac, Ctrl+K everywhere else, and "/" the way every
+      // Cmd+K on a Mac, Ctrl+K everywhere else, and"/" the way every
       // text-first tool has done it since IRC.
       const combo = (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k";
       const slash =
@@ -73,21 +106,17 @@ export function CommandPalette() {
         return;
       }
 
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") close();
     };
 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [close]);
 
   useEffect(() => {
-    if (!open) {
-      setQuery("");
-      setMembers([]);
-      setActive(0);
-      return;
-    }
-    // Focus after the frame the dialog mounts in, or the ref is still null.
+    if (!open) return;
+    // Focus after the frame the dialog mounts in, or the ref is still
+    // null. Touching the DOM is what an effect is actually for.
     const timer = setTimeout(() => inputRef.current?.focus(), 20);
     return () => clearTimeout(timer);
   }, [open]);
@@ -99,10 +128,9 @@ export function CommandPalette() {
 
     // Two characters, because one letter matches most of the table and the
     // request would be thrown away by the next keystroke anyway.
-    if (q.length < 2) {
-      setMembers([]);
-      return;
-    }
+    // No request, and nothing stored either: what to show for a short
+    // query is derived below from the query itself.
+    if (q.length < 2) return;
 
     const ticket = ++latest.current;
     const timer = setTimeout(async () => {
@@ -126,7 +154,19 @@ export function CommandPalette() {
     return () => clearTimeout(timer);
   }, [query]);
 
-  useEffect(() => setActive(0), [query]);
+  /*
+   * The highlight goes back to the top when the query changes.
+   *
+   * Adjusted during render rather than in an effect — the pattern React
+   * documents for "state that changes when a prop or another piece of
+   * state changes". An effect would paint the old highlight against the
+   * new results for one frame.
+   */
+  const [queryAtHighlight, setQueryAtHighlight] = useState(query);
+  if (query !== queryAtHighlight) {
+    setQueryAtHighlight(query);
+    setActive(0);
+  }
 
   // ─── Choosing ───────────────────────────────────────────
 
@@ -135,7 +175,7 @@ export function CommandPalette() {
       const result = results[index];
       if (!result) return;
 
-      setOpen(false);
+      close();
 
       if (result.type === "command") {
         // A handful of commands do something instead of going somewhere. The
@@ -152,7 +192,7 @@ export function CommandPalette() {
 
       router.push(`/members/${result.member.user_id}`);
     },
-    [results, router]
+    [results, router, close]
   );
 
   const onKeyDown = (event: React.KeyboardEvent) => {
@@ -175,24 +215,28 @@ export function CommandPalette() {
           somewhere that is not documentation. */}
       <button
         onClick={() => setOpen(true)}
-        className="flex w-full max-w-md items-center gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground transition hover:bg-muted"
+        className="flex w-full max-w-md items-center gap-2 rounded-xl border border-foreground/15 bg-card/70 px-3 py-2 text-[0.92rem] text-muted-foreground transition-colors hover:border-foreground/25 hover:bg-card"
       >
         <Search className="size-4 shrink-0" />
         <span className="flex-1 text-left">Search pages, settings, people…</span>
-        <kbd className="hidden rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] sm:inline">
+        <kbd className="hidden rounded border border-foreground/[0.06] bg-background px-1.5 py-0.5 font-mono text-[0.8rem] sm:inline">
           ⌘K
         </kbd>
       </button>
 
-      <AnimatePresence>
-        {open && (
+      {/* Portalled to the body because useModalLock makes the whole app
+          shell inert, and this button lives inside it. */}
+      {typeof document !== "undefined" &&
+        createPortal(
+          <AnimatePresence>
+            {open && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
-            className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-[12vh] backdrop-blur-sm"
-            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-[150] flex items-start justify-center bg-foreground/[0.12] p-4 pt-[12vh]"
+            onClick={close}
           >
             <motion.div
               initial={{ opacity: 0, y: -8, scale: 0.98 }}
@@ -200,9 +244,9 @@ export function CommandPalette() {
               exit={{ opacity: 0, y: -8, scale: 0.98 }}
               transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
               onClick={(event) => event.stopPropagation()}
-              className="w-full max-w-xl overflow-hidden rounded-xl border border-border bg-background shadow-2xl"
+              className="surface-float w-full max-w-xl overflow-hidden rounded-2xl"
             >
-              <div className="flex items-center gap-3 border-b border-border px-4">
+              <div className="flex items-center gap-3 border-b border-foreground/[0.06] px-4">
                 <Search className="size-4 shrink-0 text-muted-foreground" />
                 <input
                   ref={inputRef}
@@ -210,14 +254,14 @@ export function CommandPalette() {
                   onChange={(event) => setQuery(event.target.value)}
                   onKeyDown={onKeyDown}
                   placeholder="Search pages, settings, actions, people…"
-                  className="flex-1 bg-transparent py-4 text-sm outline-none placeholder:text-muted-foreground"
+                  className="flex-1 bg-transparent py-4 text-[0.92rem] outline-none placeholder:text-muted-foreground"
                 />
                 {searching && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
               </div>
 
               <div className="max-h-[52vh] overflow-y-auto p-2">
                 {results.length === 0 ? (
-                  <p className="px-3 py-8 text-center text-sm text-muted-foreground">
+                  <p className="px-3 py-8 text-center text-[0.92rem] text-muted-foreground">
                     Nothing matches “{query}”.
                   </p>
                 ) : (
@@ -236,9 +280,9 @@ export function CommandPalette() {
                       </Section>
                     )}
 
-                    {members.length > 0 && (
+                    {shownMembers.length > 0 && (
                       <Section label="Members">
-                        {members.map((member, index) => {
+                        {shownMembers.map((member, index) => {
                           const flat = commands.length + index;
                           return (
                             <MemberRow
@@ -256,8 +300,8 @@ export function CommandPalette() {
                 )}
               </div>
 
-              <div className="flex items-center gap-4 border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
-                <Hint icon={<ArrowUp className="size-3" />} label="/" second={<ArrowDown className="size-3" />}>
+              <div className="flex items-center gap-4 border-t border-foreground/[0.06] px-4 py-2 text-[0.8rem] text-muted-foreground">
+                <Hint icon={<ArrowUp className="size-3" />} second={<ArrowDown className="size-3" />}>
                   navigate
                 </Hint>
                 <Hint icon={<CornerDownLeft className="size-3" />}>open</Hint>
@@ -265,8 +309,10 @@ export function CommandPalette() {
               </div>
             </motion.div>
           </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body,
         )}
-      </AnimatePresence>
     </>
   );
 }
@@ -274,7 +320,7 @@ export function CommandPalette() {
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mb-1">
-      <p className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+      <p className="px-3 py-1.5 text-[0.8rem] font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </p>
       {children}
@@ -299,20 +345,20 @@ function CommandRow({
     <button
       onMouseEnter={onHover}
       onClick={onSelect}
-      className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition ${
-        active ? "bg-muted" : ""
+      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition ${
+        active ? "bg-muted" :""
       }`}
     >
       <Icon className="size-4 shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm">{entry.title}</span>
+        <span className="block truncate text-[0.92rem]">{entry.title}</span>
         {entry.subtitle && (
-          <span className="block truncate text-xs text-muted-foreground">{entry.subtitle}</span>
+          <span className="block truncate text-[0.86rem] text-muted-foreground">{entry.subtitle}</span>
         )}
       </span>
       {/* The group, not the kind: "Config" tells you where you are about to
-          land, where "setting" only restates the icon. */}
-      <span className="shrink-0 rounded border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+          land, where"setting" only restates the icon. */}
+      <span className="shrink-0 rounded border border-foreground/[0.06] px-1.5 py-0.5 text-[0.8rem] text-muted-foreground">
         {entry.group}
       </span>
     </button>
@@ -336,8 +382,8 @@ function MemberRow({
     <button
       onMouseEnter={onHover}
       onClick={onSelect}
-      className={`flex w-full items-center gap-3 rounded-md px-3 py-2 text-left transition ${
-        active ? "bg-muted" : ""
+      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition ${
+        active ? "bg-muted" :""
       }`}
     >
       {photo ? (
@@ -347,8 +393,8 @@ function MemberRow({
         <span className="size-7 shrink-0 rounded-full bg-muted" />
       )}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm">{member.name ?? "Unnamed"}</span>
-        <span className="block truncate text-xs text-muted-foreground">{member.email}</span>
+        <span className="block truncate text-[0.92rem]">{member.name ??"Unnamed"}</span>
+        <span className="block truncate text-[0.86rem] text-muted-foreground">{member.email}</span>
       </span>
     </button>
   );
@@ -357,18 +403,16 @@ function MemberRow({
 function Hint({
   icon,
   second,
-  label,
   children,
 }: {
   icon: React.ReactNode;
   second?: React.ReactNode;
-  label?: string;
   children: React.ReactNode;
 }) {
   return (
     <span className="flex items-center gap-1">
-      <kbd className="rounded border border-border px-1 py-0.5">{icon}</kbd>
-      {second && <kbd className="rounded border border-border px-1 py-0.5">{second}</kbd>}
+      <kbd className="rounded border border-foreground/[0.06] px-1 py-0.5">{icon}</kbd>
+      {second && <kbd className="rounded border border-foreground/[0.06] px-1 py-0.5">{second}</kbd>}
       {children}
     </span>
   );

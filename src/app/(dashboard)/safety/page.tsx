@@ -1,6 +1,5 @@
 "use client";
-
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { adminFetch } from "@/lib/adminFetch";
@@ -9,6 +8,19 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, Ban, CheckCircle2, LogOut, RefreshCw, ShieldCheck } from "lucide-react";
+import { Pagination, paginate, usePagination } from "@/components/ui/pagination";
+import { EmptyState } from "@/components/ui/page";
+import { PageSkeleton } from "@/components/ui/page";
+import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { useConfirm, useAskReason } from "@/components/ui/confirm";
+import { useToast } from "@/components/ui/toast";
+import { PageHeader, Explainer } from "@/components/ui/page";
+import { Segmented } from "@/components/ui/select";
+import { QueuePanel } from "@/components/safety/QueuePanel";
+import { SafetyRulesPanel } from "@/components/safety/SafetyRulesPanel";
+import { TicketsPanel } from "@/components/safety/TicketsPanel";
+import { VerificationPanel } from "@/components/safety/VerificationPanel";
+import { DailiesPanel } from "@/components/safety/DailiesPanel";
 
 /**
  * The moderation queue.
@@ -52,7 +64,7 @@ const STATUS_STYLES: Record<string, string> = {
   open: "border-destructive/30 bg-destructive/10 text-destructive",
   reviewing: "border-orange-500/30 bg-orange-500/10 text-orange-600",
   resolved: "border-emerald-500/30 bg-emerald-500/10 text-emerald-600",
-  dismissed: "border-border/50 bg-muted text-muted-foreground",
+  dismissed: "border-foreground/[0.06] bg-muted text-muted-foreground",
 };
 
 const TABS: { key: string; label: string }[] = [
@@ -76,12 +88,12 @@ function formatDateTime(value: string | null) {
       });
 }
 
-function nameOf(profile: ProfileRef | null, fallback: string) {
-  return profile?.name || profile?.email || fallback.slice(0, 8);
+function nameOf(profile: ProfileRef | null) {
+  return profile?.name || profile?.email || "Deleted account";
 }
 
-function initialsOf(profile: ProfileRef | null, fallback: string) {
-  return nameOf(profile, fallback)
+function initialsOf(profile: ProfileRef | null) {
+  return nameOf(profile)
     .split(/\s+/)
     .slice(0, 2)
     .map((part) => part[0])
@@ -94,15 +106,44 @@ export default function SafetyPage() {
   // a production build fails outright without one.
   return (
     <Suspense
-      fallback={<div className="py-16 text-center text-muted-foreground">Loading reports...</div>}
+      fallback={<PageSkeleton sections={2} />}
     >
       <SafetyView />
     </Suspense>
   );
 }
 
+type View = "queue" | "reports" | "patterns" | "tickets" | "verification" | "dailies";
+
+const VIEWS: { value: View; label: string }[] = [
+  { value: "queue", label: "Waiting" },
+  { value: "reports", label: "Reports" },
+  { value: "patterns", label: "Patterns" },
+  { value: "tickets", label: "Tickets" },
+  { value: "verification", label: "Verification" },
+  { value: "dailies", label: "Today's posts" },
+];
+
+const BLURB: Record<View, string> = {
+  reports: "Everything reported, and what was decided.",
+  queue: "Reports waiting for a decision. Clear this daily.",
+  patterns: "Scam messages and dodgy links the app watches for.",
+  tickets: "Support messages from members, and the replies sent back.",
+  verification: "Members proving they match their photos. Selfies are never kept.",
+  dailies: "Posts from today. All of it disappears within 24 hours.",
+};
+
 function SafetyView() {
+  const confirm = useConfirm();
   const searchParams = useSearchParams();
+  const [view, setView] = useState<View>(() => {
+    const asked = searchParams.get("view");
+    return asked === "queue" || asked === "patterns" || asked === "tickets"
+      ? asked
+      : "reports";
+  });
+  const askReason = useAskReason();
+  const toast = useToast();
 
   const [reports, setReports] = useState<ReportRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,7 +152,7 @@ function SafetyView() {
   const [tab, setTab] = useState<string>(() => {
     // The palette links here as /safety?filter=open.
     const requested = searchParams.get("filter");
-    return requested && TABS.some((entry) => entry.key === requested) ? requested : "open";
+    return requested && TABS.some((entry) => entry.key === requested) ? requested :"open";
   });
 
   const load = useCallback(async () => {
@@ -126,16 +167,14 @@ function SafetyView() {
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    void Promise.resolve().then(load);
-  }, [load]);
+  useLoadOnMount(load);
 
   const setStatus = useCallback(
     async (report: ReportRow, status: string) => {
       setBusy(true);
       const { error } = await adminFetch("/api/reports", {
         method: "PATCH",
-        body: JSON.stringify({ id: report.id, status, notes: report.notes ?? "" }),
+        body: JSON.stringify({ id: report.id, status, notes: report.notes ??"" }),
       });
       if (error) setError(error);
       await load();
@@ -150,17 +189,17 @@ function SafetyView() {
 
       const reason = suspended
         ? null
-        : window.prompt(`Suspend ${nameOf(profile, profile.user_id)}. Reason?`, "");
+        : window.prompt(`Suspend ${nameOf(profile)}. Reason?`, "");
 
       // A null reason means the prompt was cancelled, not that the reason was
-      // left blank — an empty string is a deliberate "no reason given".
+      // left blank — an empty string is a deliberate"no reason given".
       if (!suspended && reason === null) return;
 
       setBusy(true);
       const { error } = await adminFetch("/api/reports", {
         method: "POST",
         body: JSON.stringify({
-          action: suspended ? "unsuspend" : "suspend",
+          action: suspended ? "unsuspend" :"suspend",
           user_id: profile.user_id,
           reason,
         }),
@@ -175,9 +214,11 @@ function SafetyView() {
   const forceLogout = useCallback(
     async (profile: ProfileRef) => {
       if (
-        !window.confirm(
-          `Sign ${nameOf(profile, profile.user_id)} out of every device? Use this when an account is compromised rather than at fault.`,
-        )
+        !(await confirm({
+          title: `Sign ${nameOf(profile)} out everywhere?`,
+          body: "For an account somebody else has got into — not as a punishment. They can sign back in straight away.",
+          confirmLabel: "Sign them out",
+        }))
       ) {
         return;
       }
@@ -190,7 +231,46 @@ function SafetyView() {
       if (error) setError(error);
       setBusy(false);
     },
-    [],
+    [confirm],
+  );
+
+  const onModerate = useCallback(
+    async (
+      report: ReportRow,
+      action: "warn" | "reverify" | "ban",
+      copy: { title: string; body: string; confirmLabel: string; danger?: boolean },
+    ) => {
+      const why = await askReason({
+        title: copy.title,
+        body: copy.body,
+        confirmLabel: copy.confirmLabel,
+        tone: copy.danger ? "danger" : "default",
+        reason: {
+          label: "Why?",
+          placeholder: "What they did, and what you checked.",
+        },
+      });
+
+      if (!why) return;
+
+      setBusy(true);
+
+      const { error } = await adminFetch("/api/moderation", {
+        method: "POST",
+        body: JSON.stringify({ report_id: report.id, action, reason: why }),
+      });
+
+      if (error) {
+        setError(error);
+        toast.error({ title: "Could not do that", body: error });
+      } else {
+        toast.success({ title: copy.confirmLabel + " — done" });
+        await load();
+      }
+
+      setBusy(false);
+    },
+    [askReason, load, toast],
   );
 
   const stats = useMemo(() => {
@@ -211,47 +291,63 @@ function SafetyView() {
     [reports, tab],
   );
 
+  // Resets when a filter shortens the list, so filtering while on a
+  // later page cannot leave you staring at an empty one.
+  const { page, setPage } = usePagination(visible.length);
+
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">Trust &amp; Safety</h2>
-          <p className="text-muted-foreground">
-            Reports filed from the app, and what was done about them.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          onClick={load}
-          disabled={loading}
-          className="rounded-none border-border/50 text-xs uppercase tracking-[0.2em]"
-        >
-          <RefreshCw className="mr-2 size-4" />
-          Refresh
-        </Button>
-      </div>
+      <PageHeader
+        title="Moderation"
+        description="Reports, decisions, warning patterns and tickets."
+        actions={
+          <>
+            <Segmented value={view} onChange={setView} options={VIEWS} />
+            {view === "reports" && (
+              <Button variant="secondary" onClick={load} disabled={loading}>
+                <RefreshCw className={loading ? "animate-spin" : undefined} />
+                Refresh
+              </Button>
+            )}
+          </>
+        }
+      />
+
+      <Explainer>{BLURB[view]}</Explainer>
+
+      {view === "queue" && <QueuePanel />}
+      {view === "patterns" && <SafetyRulesPanel />}
+      {view === "tickets" && <TicketsPanel />}
+      {view === "verification" && <VerificationPanel />}
+      {view === "dailies" && <DailiesPanel />}
+
+      {view === "reports" && (
+        <>
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card className="border-destructive/20 bg-destructive/10">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-destructive">Waiting</CardTitle>
+            <CardTitle className="text-[0.92rem] font-medium text-destructive">Waiting</CardTitle>
+            <p className="text-[0.86rem] leading-relaxed text-muted-foreground">
+              Reports nobody has decided on yet. This is the part that needs a person.
+            </p>
           </CardHeader>
-          <CardContent className="text-3xl font-black tracking-tight text-destructive">
+          <CardContent className="tnum text-[1.9rem] font-light tracking-tight text-destructive">
             {stats.open}
           </CardContent>
         </Card>
-        <Stat label="Being Reviewed" value={stats.reviewing} />
-        <Stat label="Reported 3+ Times" value={stats.repeat} />
+        <Stat label="Being looked at" value={stats.reviewing} />
+        <Stat label="Reported 3 or more times" value={stats.repeat} />
         <Stat label="Suspended" value={stats.suspended} />
       </div>
 
       {error && (
-        <div className="border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+        <div className="rounded-xl border border-destructive/25 bg-destructive/8 px-3.5 py-2.5 text-[0.92rem] text-destructive">
           {error}
         </div>
       )}
 
-      <div className="flex w-fit flex-wrap border border-border/50">
+      <div className="flex w-fit flex-wrap border border-foreground/[0.06]">
         {TABS.map((entry) => {
           const count =
             entry.key === "all"
@@ -262,9 +358,9 @@ function SafetyView() {
             <button
               key={entry.key}
               onClick={() => setTab(entry.key)}
-              className={`px-4 py-2 text-xs uppercase tracking-[0.2em] transition-colors ${
+              className={`rounded-full px-3.5 py-1.5 text-[0.86rem] font-medium transition-all duration-200 ${
                 tab === entry.key
-                  ? "bg-foreground text-background"
+                  ? "bg-primary text-primary-foreground shadow-[0_1px_2px_rgba(26,26,24,0.18)]"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
@@ -275,44 +371,56 @@ function SafetyView() {
         })}
       </div>
 
-      <Card className="border-border/50 bg-card">
+      <Card className="border-foreground/[0.06] bg-card">
         <CardHeader>
           <CardTitle>Reports</CardTitle>
+          <p className="text-[0.86rem] leading-relaxed text-muted-foreground">
+            Everything that has been reported, including the ones already dealt with.
+          </p>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="py-16 text-center text-muted-foreground">Loading reports...</div>
+            <PageSkeleton sections={2} />
           ) : visible.length === 0 ? (
-            <div className="py-16 text-center text-muted-foreground">
-              {tab === "open" ? "Nothing waiting. Queue is clear." : "No reports here."}
-            </div>
+            <EmptyState
+              title={tab === "open" ? "Nothing waiting" : "No reports here"}
+              body={
+                tab === "open"
+                  ? "Every report has been dealt with."
+                  : "Nothing has been reported that matches this filter."
+              }
+            />
           ) : (
             <div className="space-y-6">
-              {visible.map((report) => (
+              {paginate(visible, page).map((report) => (
                 <ReportCard
                   key={report.id}
                   report={report}
                   busy={busy}
                   onStatus={setStatus}
+                  onModerate={onModerate}
                   onToggleSuspend={toggleSuspend}
                   onForceLogout={forceLogout}
                 />
               ))}
+            <Pagination page={page} total={visible.length} onPage={setPage} />
             </div>
           )}
         </CardContent>
       </Card>
+        </>
+      )}
     </div>
   );
 }
 
 function Stat({ label, value }: { label: string; value: number | string }) {
   return (
-    <Card className="border-border/50 bg-card">
+    <Card className="border-foreground/[0.06] bg-card">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{label}</CardTitle>
+        <CardTitle className="text-[0.92rem] font-medium text-muted-foreground">{label}</CardTitle>
       </CardHeader>
-      <CardContent className="text-3xl font-black tracking-tight">{value}</CardContent>
+      <CardContent className="tnum text-[1.9rem] font-light tracking-tight">{value}</CardContent>
     </Card>
   );
 }
@@ -321,12 +429,18 @@ function ReportCard({
   report,
   busy,
   onStatus,
+  onModerate,
   onToggleSuspend,
   onForceLogout,
 }: {
   report: ReportRow;
   busy: boolean;
   onStatus: (report: ReportRow, status: string) => void;
+  onModerate: (
+    report: ReportRow,
+    action: "warn" | "reverify" | "ban",
+    copy: { title: string; body: string; confirmLabel: string; danger?: boolean },
+  ) => void;
   onToggleSuspend: (profile: ProfileRef) => void;
   onForceLogout: (profile: ProfileRef) => void;
 }) {
@@ -334,24 +448,24 @@ function ReportCard({
   const open = report.status === "open" || report.status === "reviewing";
 
   return (
-    <div className="space-y-3 border-b border-border/50 pb-6 last:border-0 last:pb-0">
+    <div className="space-y-3 border-b border-foreground/[0.06] pb-6 last:border-0 last:pb-0">
       <div className="flex flex-wrap items-center gap-3">
         <Link href={`/members/${report.reported_user_id}`}>
-          <Avatar className="h-11 w-11 border border-border bg-transparent">
+          <Avatar className="h-11 w-11 border border-foreground/[0.06] bg-transparent">
             <AvatarImage src={report.reported?.photos?.[0] ?? undefined} />
-            <AvatarFallback className="bg-transparent text-xs">
-              {initialsOf(report.reported, report.reported_user_id)}
+            <AvatarFallback className="bg-transparent text-[0.86rem]">
+              {initialsOf(report.reported)}
             </AvatarFallback>
           </Avatar>
         </Link>
 
         <div className="min-w-0 flex-1">
-          <p className="flex flex-wrap items-center gap-2 text-sm font-medium">
-            {nameOf(report.reported, report.reported_user_id)}
+          <p className="flex flex-wrap items-center gap-2 text-[0.92rem] font-medium">
+            {nameOf(report.reported)}
             {report.times_reported >= 3 && (
               <Badge
                 variant="outline"
-                className="rounded-none border-destructive/30 bg-destructive/10 text-[10px] uppercase tracking-[0.2em] text-destructive"
+                className="border-destructive/30 bg-destructive/10 text-[0.86rem] text-destructive"
               >
                 <AlertTriangle className="mr-1 size-3" />
                 {report.times_reported} reports
@@ -360,34 +474,34 @@ function ReportCard({
             {suspended && (
               <Badge
                 variant="outline"
-                className="rounded-none border-border/50 bg-muted text-[10px] uppercase tracking-[0.2em] text-muted-foreground"
+                className="border-foreground/[0.06] bg-muted text-[0.86rem] text-muted-foreground"
               >
                 Suspended
               </Badge>
             )}
           </p>
-          <p className="text-xs text-muted-foreground">
-            Reported by {nameOf(report.reporter, report.reporter_id)} ·{" "}
+          <p className="text-[1rem] leading-relaxed text-muted-foreground">
+            Reported by {nameOf(report.reporter)} ·{""}
             {formatDateTime(report.created_at)}
           </p>
         </div>
 
         <Badge
           variant="outline"
-          className={`rounded-none text-[10px] uppercase tracking-[0.2em] ${
-            STATUS_STYLES[report.status] ?? ""
+          className={`text-[0.86rem] ${
+            STATUS_STYLES[report.status] ??""
           }`}
         >
           {report.status}
         </Badge>
       </div>
 
-      <p className="border-l-2 border-border/50 pl-3 text-sm">{report.reason}</p>
+      <p className="border-l-2 border-foreground/[0.06] pl-3 text-[0.92rem]">{report.reason}</p>
 
       {report.reviewed_at && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-[1rem] leading-relaxed text-muted-foreground">
           Reviewed {formatDateTime(report.reviewed_at)}
-          {report.notes ? ` — ${report.notes}` : ""}
+          {report.notes ? ` — ${report.notes}` :""}
         </p>
       )}
 
@@ -400,7 +514,7 @@ function ReportCard({
                 size="sm"
                 disabled={busy}
                 onClick={() => onStatus(report, "reviewing")}
-                className="rounded-none border-border/50 text-xs uppercase tracking-[0.2em]"
+                className="border-foreground/[0.06] text-[0.86rem]"
               >
                 Pick up
               </Button>
@@ -410,7 +524,7 @@ function ReportCard({
               size="sm"
               disabled={busy}
               onClick={() => onStatus(report, "resolved")}
-              className="rounded-none border-border/50 text-xs uppercase tracking-[0.2em]"
+              className="border-foreground/[0.06] text-[0.86rem]"
             >
               <CheckCircle2 className="mr-2 size-4" />
               Resolve
@@ -420,9 +534,43 @@ function ReportCard({
               size="sm"
               disabled={busy}
               onClick={() => onStatus(report, "dismissed")}
-              className="rounded-none border-border/50 text-xs uppercase tracking-[0.2em]"
+              className="border-foreground/[0.06] text-[0.86rem]"
             >
               Dismiss
+            </Button>
+          </>
+        )}
+
+        {report.reported && (
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                onModerate(report, "warn", {
+                  title: "Send a warning?",
+                  body: "They get a notification telling them what was reported. Nothing else changes.",
+                  confirmLabel: "Warn them",
+                })
+              }
+            >
+              Warn
+            </Button>
+
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy}
+              onClick={() =>
+                onModerate(report, "reverify", {
+                  title: "Make them verify again?",
+                  body: "Their verified badge is removed until they pass a new photo check. Use it when you doubt the account is who it claims to be.",
+                  confirmLabel: "Require it",
+                })
+              }
+            >
+              Re-verify
             </Button>
           </>
         )}
@@ -433,8 +581,8 @@ function ReportCard({
             size="sm"
             disabled={busy}
             onClick={() => onForceLogout(report.reported!)}
-            title="Sign every device out without suspending"
-            className="rounded-none border-border/50 text-xs uppercase tracking-[0.2em]"
+            title="Sign out everywhere"
+            className="border-foreground/[0.06] text-[0.86rem]"
           >
             <LogOut className="mr-2 size-4" />
             Force logout
@@ -447,10 +595,10 @@ function ReportCard({
             size="sm"
             disabled={busy}
             onClick={() => onToggleSuspend(report.reported!)}
-            className={`rounded-none text-xs uppercase tracking-[0.2em] ${
+            className={`text-[0.86rem] ${
               suspended
-                ? "border-border/50"
-                : "border-destructive/40 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                ? "border-foreground/[0.06]"
+                :"border-destructive/40 text-destructive hover:bg-destructive hover:text-destructive-foreground"
             }`}
           >
             {suspended ? (
@@ -464,6 +612,24 @@ function ReportCard({
                 Suspend
               </>
             )}
+          </Button>
+        )}
+
+        {report.reported && (
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              onModerate(report, "ban", {
+                title: `Ban ${nameOf(report.reported)}?`,
+                body: "Permanent. They lose the account and cannot sign in again. Suspension is the reversible version of this.",
+                confirmLabel: "Ban permanently",
+                danger: true,
+              })
+            }
+          >
+            Ban
           </Button>
         )}
       </div>

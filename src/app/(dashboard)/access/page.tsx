@@ -19,6 +19,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RefreshCw, Trash2, UserPlus } from "lucide-react";
+import { ConfigHistory } from "@/components/ConfigHistory";
+import { PageSkeleton } from "@/components/ui/page";
+import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { useConfirm } from "@/components/ui/confirm";
+import { PageHeader, Explainer } from "@/components/ui/page";
+import { Segmented } from "@/components/ui/select";
+import { RolesPanel } from "@/components/access/RolesPanel";
+import {
+  Pagination,
+  paginate,
+  usePagination,
+} from "@/components/ui/pagination";
 
 type AdminProfile = {
   id: string;
@@ -67,16 +79,35 @@ export default function AccessPage() {
   // useSearchParams bails out of prerendering up to the nearest boundary, and
   // a production build fails outright without one.
   return (
-    <Suspense
-      fallback={<div className="py-16 text-center text-muted-foreground">Loading admins...</div>}
-    >
+    <Suspense fallback={<PageSkeleton sections={2} />}>
       <AccessView />
     </Suspense>
   );
 }
 
+type Tab = "people" | "roles" | "history";
+
+const TABS: { value: Tab; label: string }[] = [
+  { value: "people", label: "People" },
+  { value: "roles", label: "What they can do" },
+  { value: "history", label: "What changed" },
+];
+
+/** One line per tab, so landing on one you did not pick still explains itself. */
+const BLURB: Record<Tab, string> = {
+  people:
+    "Everybody with a login here. Adding somebody emails them an invitation.",
+  roles: "What each role can do, and who has which one.",
+  history: "Every change, who made it and when.",
+};
+
 function AccessView() {
+  const confirm = useConfirm();
   const searchParams = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => {
+    const asked = searchParams.get("tab");
+    return asked === "roles" || asked === "history" ? asked : "people";
+  });
 
   // The palette links here as /access?new=1, which should land with the
   // cursor in the box rather than merely on the right page.
@@ -89,6 +120,10 @@ function AccessView() {
   const [profiles, setProfiles] = useState<AdminProfile[]>([]);
   const [form, setForm] = useState<FormState>(emptyForm);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Clamps itself when the list shortens, so removing the last admin on
+  // page two does not strand you on an empty one.
+  const { page, setPage } = usePagination(profiles.length);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -108,7 +143,8 @@ function AccessView() {
     // own row, which is exactly what AuthGuard needs and exactly wrong for a
     // page whose job is listing everyone else.
     const { data, error } = await adminTable<AdminProfile>("admin_profiles", {
-      select: "id, email, role, display_name, avatar_url, created_at, updated_at",
+      select:
+        "id, email, role, display_name, avatar_url, created_at, updated_at",
       eq: ["role", "admin"],
       order: "updated_at",
     });
@@ -123,9 +159,7 @@ function AccessView() {
     setLoading(false);
   }, [supabase]);
 
-  useEffect(() => {
-    void Promise.resolve().then(loadAdmins);
-  }, [loadAdmins]);
+  useLoadOnMount(loadAdmins);
 
   const summary = useMemo(
     () => ({
@@ -195,9 +229,12 @@ function AccessView() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Delete admin access for ${profile.email}?`,
-    );
+    const confirmed = await confirm({
+      title: `Remove admin access for ${profile.email}?`,
+      body: "They lose access to this panel immediately. Their member account is untouched.",
+      confirmLabel: "Remove access",
+      tone: "danger",
+    });
     if (!confirmed) return;
 
     setDeletingId(profile.id);
@@ -236,204 +273,235 @@ function AccessView() {
   };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="mb-2 text-4xl font-black uppercase tracking-tighter">
-            Access
-          </h1>
-          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Create and delete admins
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={loadAdmins}
-          className="h-12 rounded-none border-border/50 px-8 text-xs font-bold uppercase tracking-[0.2em]"
-          disabled={loading}
-        >
-          <RefreshCw className="mr-2 size-4" />
-          Refresh
-        </Button>
-      </div>
+    <div className="w-full space-y-8">
+      <PageHeader
+        title="Access"
+        description="Who can sign in here, and what they can change."
+        actions={
+          <>
+            <Segmented value={tab} onChange={setTab} options={TABS} />
+            {tab === "people" && (
+              <Button
+                variant="secondary"
+                onClick={loadAdmins}
+                disabled={loading}
+              >
+                <RefreshCw className={loading ? "animate-spin" : undefined} />
+                Refresh
+              </Button>
+            )}
+          </>
+        }
+      />
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Admins
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-3xl font-black tracking-tight">
-            {summary.total}
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Last Updated
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="font-mono text-sm text-muted-foreground">
-            {formatDateTime(summary.newest)}
-          </CardContent>
-        </Card>
-      </div>
+      <Explainer>{BLURB[tab]}</Explainer>
 
-      <div className="grid gap-6 lg:grid-cols-[420px_minmax(0,1fr)]">
-        <Card className="border-border/50 bg-card">
-          <CardHeader>
-            <CardTitle>Create Admin</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <div className="space-y-2">
-                <Label htmlFor="admin-email">Email</Label>
-                <Input
-                  id="admin-email"
-                  type="email"
-                  value={form.email}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      email: event.target.value,
-                    }))
-                  }
-                  className="rounded-none border border-border/50 bg-transparent"
-                  placeholder="admin@tickle.app"
-                  required
-                />
-              </div>
+      {tab === "roles" && <RolesPanel />}
 
-              <div className="space-y-2">
-                <Label htmlFor="admin-name">Display Name</Label>
-                <Input
-                  id="admin-name"
-                  value={form.display_name}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      display_name: event.target.value,
-                    }))
-                  }
-                  className="rounded-none border border-border/50 bg-transparent"
-                  placeholder="System Admin"
-                  required
-                />
-              </div>
+      {tab === "history" && <ConfigHistory />}
 
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              {success && <p className="text-sm text-foreground">{success}</p>}
+      {tab === "people" && (
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card className="border-foreground/[0.06] bg-card">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-[0.92rem] font-medium text-muted-foreground">
+                  Admins
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="tnum text-[1.9rem] font-light tracking-tight">
+                {summary.total}
+              </CardContent>
+            </Card>
+            <Card className="border-foreground/[0.06] bg-card">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-[0.92rem] font-medium text-muted-foreground">
+                  Last Updated
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="font-mono text-[0.92rem] text-muted-foreground">
+                {formatDateTime(summary.newest)}
+              </CardContent>
+            </Card>
+          </div>
 
-              <div className="flex gap-3">
-                <Button
-                  type="submit"
-                  className="flex-1 rounded-none bg-primary text-primary-foreground hover:bg-primary/90"
-                  disabled={saving}
-                >
-                  <UserPlus className="mr-2 size-4" />
-                  {saving ? "Creating..." : "Create Admin"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="rounded-none border-border/50"
-                  onClick={handleReset}
-                >
-                  Reset
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+          <div className="grid gap-6 lg:grid-cols-[420px_minmax(0,1fr)]">
+            <Card className="border-foreground/[0.06] bg-card">
+              <CardHeader>
+                <CardTitle>Add an admin</CardTitle>
+                <p className="text-[0.86rem] leading-relaxed text-muted-foreground">
+                  They get an email invitation.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <form className="space-y-4" onSubmit={handleSubmit}>
+                  <div className="space-y-2">
+                    <Label htmlFor="admin-email">Email</Label>
+                    <Input
+                      id="admin-email"
+                      type="email"
+                      value={form.email}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          email: event.target.value,
+                        }))
+                      }
 
-        <div className="rounded-md border border-border/50 bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border/50 hover:bg-transparent">
-                <TableHead>Admin</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Updated</TableHead>
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="h-24 text-center text-muted-foreground"
-                  >
-                    Loading admins...
-                  </TableCell>
-                </TableRow>
-              ) : profiles.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="h-24 text-center text-muted-foreground"
-                  >
-                    No admins found.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                profiles.map((profile) => {
-                  const name = profile.display_name || profile.email;
-                  const initials = getInitials(name);
-                  const isCurrentUser = profile.id === currentUserId;
+                      placeholder="admin@tickle.app"
+                      required
+                    />
+                  </div>
 
-                  return (
-                    <TableRow key={profile.id} className="border-border/50">
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <Avatar className="h-10 w-10 rounded-md border border-border">
-                            <AvatarImage src={profile.avatar_url || ""} />
-                            <AvatarFallback className="rounded-md bg-transparent text-muted-foreground">
-                              {initials}
-                            </AvatarFallback>
-                          </Avatar>
-                          <div className="space-y-1">
-                            <div className="font-medium">{name}</div>
-                            <div className="font-mono text-xs text-muted-foreground">
-                              {profile.email}
-                            </div>
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className="bg-primary text-primary-foreground hover:bg-primary/80">
-                          {isCurrentUser ? "current admin" : "admin"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {formatDateTime(profile.created_at)}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {formatDateTime(profile.updated_at)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleDelete(profile)}
-                          className="rounded-none text-xs uppercase tracking-[0.2em]"
-                          disabled={deletingId === profile.id || isCurrentUser}
-                        >
-                          <Trash2 className="mr-2 size-4" />
-                          {deletingId === profile.id ? "Deleting..." : "Delete"}
-                        </Button>
+                  <div className="space-y-2">
+                    <Label htmlFor="admin-name">Display Name</Label>
+                    <Input
+                      id="admin-name"
+                      value={form.display_name}
+                      onChange={(event) =>
+                        setForm((current) => ({
+                          ...current,
+                          display_name: event.target.value,
+                        }))
+                      }
+
+                      placeholder="System Admin"
+                      required
+                    />
+                  </div>
+
+                  {error && (
+                    <p className="text-[0.92rem] text-destructive">{error}</p>
+                  )}
+                  {success && (
+                    <p className="text-[0.92rem] text-foreground">{success}</p>
+                  )}
+
+                  <div className="flex gap-3">
+                    <Button
+                      type="submit"
+                      className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
+                      disabled={saving}
+                    >
+                      <UserPlus className="mr-2 size-4" />
+                      {saving ? "Creating..." : "Create Admin"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="border-foreground/[0.06]"
+                      onClick={handleReset}
+                    >
+                      Reset
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+
+            <div className="rounded-lg border border-foreground/[0.06] bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow className="border-foreground/[0.06] hover:bg-transparent">
+                    <TableHead>Admin</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead>Updated</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {loading ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={5}
+                        className="h-24 text-center text-muted-foreground"
+                      >
+                        Loading…
                       </TableCell>
                     </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+                  ) : profiles.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={5}
+                        className="h-24 text-center text-muted-foreground"
+                      >
+                        No admins found.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    paginate(profiles, page).map((profile) => {
+                      const name = profile.display_name || profile.email;
+                      const initials = getInitials(name);
+                      const isCurrentUser = profile.id === currentUserId;
+
+                      return (
+                        <TableRow
+                          key={profile.id}
+                          className="border-foreground/[0.06]"
+                        >
+                          <TableCell>
+                            <div className="flex items-center gap-3">
+                              <Avatar className="h-10 w-10 rounded-lg border border-foreground/[0.06]">
+                                <AvatarImage src={profile.avatar_url || ""} />
+                                <AvatarFallback className="rounded-lg bg-transparent text-muted-foreground">
+                                  {initials}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="space-y-1">
+                                <div className="font-medium">{name}</div>
+                                <div className="font-mono text-[0.86rem] text-muted-foreground">
+                                  {profile.email}
+                                </div>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className="bg-primary text-primary-foreground hover:bg-primary/80">
+                              {isCurrentUser ? "current admin" : "admin"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-mono text-[0.86rem] text-muted-foreground">
+                            {formatDateTime(profile.created_at)}
+                          </TableCell>
+                          <TableCell className="font-mono text-[0.86rem] text-muted-foreground">
+                            {formatDateTime(profile.updated_at)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button
+                              type="button"
+                              variant="destructive"
+                              size="sm"
+                              onClick={() => handleDelete(profile)}
+                              className="text-[0.8rem]"
+                              disabled={
+                                deletingId === profile.id || isCurrentUser
+                              }
+                            >
+                              <Trash2 className="mr-2 size-4" />
+                              {deletingId === profile.id
+                                ? "Deleting..."
+                                : "Delete"}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+
+              <div className="px-4 pb-3">
+                <Pagination
+                  page={page}
+                  total={profiles.length}
+                  onPage={setPage}
+                />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

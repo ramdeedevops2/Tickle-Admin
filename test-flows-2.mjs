@@ -57,7 +57,7 @@ async function makeUser(tag, extra = {}) {
   const userId = data.user.id;
   made.push(userId);
 
-  await admin.from('profiles').insert({
+  await admin.from('profiles').upsert({
     user_id: userId,
     name: `T2 ${tag}`,
     email,
@@ -69,7 +69,7 @@ async function makeUser(tag, extra = {}) {
     latitude: 28.6,
     longitude: 77.2,
     ...extra,
-  });
+  }, { onConflict: 'user_id' });
 
   const client = createClient(url, anonKey, { auth: { persistSession: false } });
   const { error: signInError } = await client.auth.signInWithPassword({ email, password });

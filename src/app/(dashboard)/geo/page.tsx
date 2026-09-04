@@ -1,12 +1,19 @@
 "use client";
-
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
 import { DataToolbar } from "@/components/DataToolbar";
 import { adminTable } from "@/lib/adminFetch";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { MapPin, RefreshCw } from "lucide-react";
+import { Pagination, paginate, usePagination } from "@/components/ui/pagination";
+import { PageHeader, Section, EmptyState } from "@/components/ui/page";
+import { StatStrip, StatusPill } from "@/components/ui/stat-strip";
+import { SkeletonCard, SkeletonStats } from "@/components/ui/skeleton";
+import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { Segmented } from "@/components/ui/select";
+import { PathsPanel } from "@/components/geo/PathsPanel";
+import { CitiesPanel } from "@/components/geo/CitiesPanel";
+import { useSearchParams } from "next/navigation";
 
 type ProfileLocationRow = {
   id: string;
@@ -43,7 +50,19 @@ function formatCoordinate(value: number | null) {
   return value == null ? "-" : value.toFixed(5);
 }
 
+type Tab = "now" | "paths" | "cities";
+
+const TABS: { value: Tab; label: string }[] = [
+  { value: "now", label: "Where people are" },
+  { value: "paths", label: "Crossing paths" },
+  { value: "cities", label: "Cities" },
+];
+
 export default function GeoPage() {
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() =>
+    searchParams.get("tab") === "paths" ? "paths" : "now",
+  );
   const [profiles, setProfiles] = useState<ProfileLocationRow[]>([]);
   const [encounters, setEncounters] = useState<EncounterRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -61,8 +80,7 @@ export default function GeoPage() {
     const [{ data: profileData, error: profileError }, { data: encounterData }] =
       await Promise.all([
         adminTable<ProfileLocationRow>("profiles", {
-          select:
-            "id, user_id, name, email, latitude, longitude, search_radius, is_online, last_active",
+          select: "id, user_id, name, email, latitude, longitude, search_radius, is_online, last_active",
           order: "last_active",
           limit: 100,
         }),
@@ -79,7 +97,7 @@ export default function GeoPage() {
       setEncounters([]);
     } else {
       // The null-location filter moved here: the route takes one equality
-      // filter, and "has coordinates" is cheap to apply on 100 rows.
+      // filter, and"has coordinates" is cheap to apply on 100 rows.
       setProfiles(
         (profileData ?? []).filter(
           (row) => row.latitude != null && row.longitude != null,
@@ -91,9 +109,7 @@ export default function GeoPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    void Promise.resolve().then(loadGeo);
-  }, [loadGeo]);
+  useLoadOnMount(loadGeo);
 
   const stats = useMemo(() => {
     const active = profiles.filter((profile) => profile.is_online).length;
@@ -110,6 +126,18 @@ export default function GeoPage() {
       uniqueEncounterUsers,
     };
   }, [profiles, encounters]);
+
+  // Only the profiles fetch carries names, and it does not cover everyone
+  // in the encounter log — anybody missing falls back to a short id rather
+  // than the full UUID, which is unreadable and tells the admin nothing.
+  const nameByUser = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const profile of profiles) {
+      const label = profile.name || profile.email;
+      if (profile.user_id && label) map.set(profile.user_id, label);
+    }
+    return map;
+  }, [profiles]);
 
   const topEncountered = useMemo(() => {
     const counts = new Map<string, number>();
@@ -132,12 +160,12 @@ export default function GeoPage() {
       if (q) {
         const haystack = [profile.name, profile.email, profile.user_id]
           .filter(Boolean)
-          .join(" ")
+          .join("")
           .toLowerCase();
         if (!haystack.includes(q)) return false;
       }
 
-      const presence = facets.presence ?? "all";
+      const presence = facets.presence ??"all";
       if (presence === "online" && !profile.is_online) return false;
       if (presence === "offline" && profile.is_online) return false;
 
@@ -145,158 +173,189 @@ export default function GeoPage() {
     });
   }, [profiles, query, facets]);
 
+  // Resets when a filter shortens the list, so filtering while on a
+  // later page cannot leave you staring at an empty one.
+  const { page, setPage } = usePagination(visibleProfiles.length);
+
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="mb-2 text-4xl font-black uppercase tracking-tighter">
-            Geo
-          </h1>
-          <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-            Profile locations and nearby encounters
-          </p>
+    <div className="space-y-4">
+      <PageHeader
+        title="Location"
+        description="Where members are, where they cross, and which cities are open."
+        actions={
+          <>
+            <Segmented value={tab} onChange={setTab} options={TABS} />
+            {tab === "now" && (
+              <Button variant="secondary" onClick={loadGeo} disabled={loading}>
+                <RefreshCw className={loading ? "animate-spin" : undefined} />
+                Refresh
+              </Button>
+            )}
+          </>
+        }
+      />
+
+      {tab === "paths" && <PathsPanel />}
+
+      {tab === "cities" && <CitiesPanel />}
+
+      {tab === "now" && (
+        <>
+      {error && (
+        <div className="rounded-xl border border-destructive/25 bg-destructive/8 px-3.5 py-2.5 text-[0.92rem] text-destructive">
+          {error}
         </div>
-        <Button
-          variant="outline"
-          onClick={loadGeo}
-          disabled={loading}
-          className="h-12 rounded-none border-border/50 px-8 text-xs font-bold uppercase tracking-[0.2em]"
+      )}
+
+      {loading ? (
+        <SkeletonStats count={4} />
+      ) : (
+        <StatStrip
+          stats={[
+            { label: "Members with a location", value: stats.located, icon: MapPin },
+            { label: "Online right now", value: stats.active, tone: "success" },
+            { label: "Times people were near each other", value: stats.encounters },
+            { label: "People involved", value: stats.uniqueEncounterUsers },
+          ]}
+        />
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <Section
+          title="Recent locations"
+          hint="Last known place, and how far they search."
         >
-          <RefreshCw className="mr-2 size-4" />
-          Refresh
-        </Button>
-      </div>
+          <div className="mb-4">
+            <DataToolbar
+              query={query}
+              onQuery={setQuery}
+              searchPlaceholder="Search by name or email"
+              filters={[
+                {
+                  id: "presence",
+                  label: "Presence",
+                  options: [
+                    { value: "online", label: "Online", count: stats.active },
+                    {
+                      value: "offline",
+                      label: "Offline",
+                      count: Math.max(0, stats.located - stats.active),
+                    },
+                  ],
+                },
+              ]}
+              values={facets}
+              onFilter={(id, value) =>
+                setFacets((current) => ({ ...current, [id]: value }))
+              }
+              onRefresh={loadGeo}
+              loading={loading}
+              showing={visibleProfiles.length}
+              total={profiles.length}
+            />
+          </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Located Profiles
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-3xl font-black tracking-tight">
-            {stats.located}
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Online Nearby
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-3xl font-black tracking-tight">
-            {stats.active}
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Encounters
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-3xl font-black tracking-tight">
-            {stats.encounters}
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">
-              Encountered Users
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="text-3xl font-black tracking-tight">
-            {stats.uniqueEncounterUsers}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="relative min-h-[560px] overflow-hidden border border-border/50 bg-black">
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff0a_1px,transparent_1px),linear-gradient(to_bottom,#ffffff0a_1px,transparent_1px)] bg-[size:16px_16px]" />
-          <div className="relative z-10 h-full p-6">
-            {loading ? (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                Loading locations...
-              </div>
-            ) : error ? (
-              <div className="flex h-full items-center justify-center text-sm text-destructive">
-                {error}
-              </div>
-            ) : profiles.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-                No profile coordinates found.
-              </div>
-            ) : (
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                {visibleProfiles.map((profile) => (
+          {loading ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <SkeletonCard key={index} lines={2} />
+              ))}
+            </div>
+          ) : visibleProfiles.length === 0 ? (
+            <EmptyState
+              title="No locations yet"
+              body="Nobody has shared a location, or the search above is hiding everyone."
+            />
+          ) : (
+            <>
+              <div className="grid gap-3 md:grid-cols-2">
+                {paginate(visibleProfiles, page).map((profile) => (
                   <div
                     key={profile.id}
-                    className="border border-border/50 bg-background/80 p-4"
+                    className="rounded-xl border border-foreground/[0.06] bg-card/70 p-3"
                   >
-                    <div className="mb-3 flex items-start justify-between gap-3">
-                      <div>
-                        <div className="font-medium">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-[0.92rem] font-medium">
                           {profile.name || profile.email || profile.user_id}
-                        </div>
-                        <div className="font-mono text-xs text-muted-foreground">
+                        </p>
+                        <p className="truncate font-mono text-[0.8rem] text-muted-foreground">
                           {formatCoordinate(profile.latitude)},{" "}
                           {formatCoordinate(profile.longitude)}
-                        </div>
+                        </p>
                       </div>
-                      <Badge variant={profile.is_online ? "default" : "secondary"}>
+                      <StatusPill tone={profile.is_online ? "success" : "neutral"}>
                         {profile.is_online ? "Online" : "Offline"}
-                      </Badge>
+                      </StatusPill>
                     </div>
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{profile.search_radius ?? 10} km radius</span>
+
+                    <div className="mt-2 flex items-center justify-between text-[0.8rem] text-muted-foreground">
+                      <span>Searching {profile.search_radius ?? 10} km</span>
                       <span>{formatDateTime(profile.last_active)}</span>
                     </div>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
-        </div>
 
-        <div className="border border-border/50 p-6">
-          <h2 className="mb-6 text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">
-            Top Encounter Sources
-          </h2>
+              {/* Outside the grid. It had been dropped inside it, so the
+                  browser laid the controls out as another card. */}
+              <Pagination
+                page={page}
+                total={visibleProfiles.length}
+                onPage={setPage}
+              />
+            </>
+          )}
+        </Section>
 
-          <div className="space-y-5">
-            {topEncountered.length === 0 ? (
-              <div className="py-12 text-center text-sm text-muted-foreground">
-                No nearby encounters found.
-              </div>
-            ) : (
-              topEncountered.map(([userId, count]) => {
+        <Section
+          title="Crossing paths most"
+          hint="Most often near others, out of the last 500 crossings."
+        >
+          {topEncountered.length === 0 ? (
+            <EmptyState
+              title="Nobody yet"
+              body="This fills in once members start being near each other."
+            />
+          ) : (
+            <div className="space-y-3">
+              {topEncountered.map(([userId, count]) => {
                 const percentage = Math.max(
                   8,
                   Math.round((count / topEncountered[0][1]) * 100),
                 );
+                const name = nameByUser.get(userId);
 
                 return (
-                  <div key={userId} className="space-y-2">
-                    <div className="flex justify-between gap-3 text-xs font-mono">
-                      <span className="truncate text-foreground">
-                        <MapPin className="mr-1 inline size-3" />
-                        {userId}
+                  <div key={userId} className="space-y-1.5">
+                    <div className="flex justify-between gap-3 text-[0.86rem]">
+                      <Link
+                        href={`/members/${userId}`}
+                        className={`truncate hover:underline ${
+                          name ? "" : "font-mono text-muted-foreground"
+                        }`}
+                      >
+                        {name ?? "Deleted account"}
+                      </Link>
+                      <span className="tnum shrink-0 text-muted-foreground">
+                        {count} times
                       </span>
-                      <span className="text-muted-foreground">{count}</span>
                     </div>
-                    <div className="h-1 w-full bg-border/30">
+                    <div className="h-1 w-full overflow-hidden rounded-full bg-foreground/[0.08]">
                       <div
-                        className="h-full bg-foreground"
+                        className="h-full rounded-full bg-foreground/50"
                         style={{ width: `${percentage}%` }}
                       />
                     </div>
                   </div>
                 );
-              })
-            )}
-          </div>
-        </div>
+              })}
+            </div>
+          )}
+        </Section>
       </div>
+        </>
+      )}
     </div>
   );
 }

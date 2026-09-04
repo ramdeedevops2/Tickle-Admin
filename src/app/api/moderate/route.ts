@@ -25,7 +25,10 @@ const REMOVABLE: Record<string, string> = {
   matches: "match",
   likes: "like",
   passes: "pass",
-  messages: "message",
+  // messages is deliberately absent. An admin reads a conversation to
+  // establish what happened, and a panel that can erase the thing it was
+  // opened to examine is a panel that can destroy the evidence — so no
+  // route here deletes a message, not only no button.
   dailies: "daily",
   profile_comments: "comment",
   super_likes: "super_like",
@@ -36,7 +39,7 @@ const REMOVABLE: Record<string, string> = {
 
 export async function DELETE(request: NextRequest) {
   try {
-    const auth = await requireAdmin(request);
+    const auth = await requireAdmin(request, "moderation.act");
     if (auth.error) return auth.error;
 
     const { searchParams } = new URL(request.url);
