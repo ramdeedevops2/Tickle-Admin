@@ -17,6 +17,8 @@ import { failed, requireAdmin } from "@/lib/supabase/admin";
  *   person who created it is not the one who will notice.
  */
 
+const OFFER_KINDS = ["trial", "discount", "referral"];
+
 const PACK_LIMITS: Record<string, { min: number; max: number }> = {
   amount: { min: 1, max: 100000 },
   bonus: { min: 0, max: 100000 },
@@ -153,6 +155,42 @@ export async function PATCH(request: NextRequest) {
       if ("ends_at" in body) {
         update.ends_at = body.ends_at || null;
       }
+
+      /*
+       * The wording, and what the offer actually is.
+       *
+       * These were create-only, so a typo in an offer name could be
+       * fixed exactly one way: stop it and make another. The key stays
+       * locked — it is what a redemption row points at, and renaming
+       * it would orphan the ones already taken.
+       */
+      if (typeof body.label === "string") {
+        const label = body.label.trim();
+        if (label.length < 2) {
+          return NextResponse.json({ error: "That needs a name." }, { status: 400 });
+        }
+        update.label = label;
+      }
+
+      if (typeof body.body === "string") {
+        update.body = body.body.trim() || null;
+      }
+
+      if (typeof body.kind === "string") {
+        if (!OFFER_KINDS.includes(body.kind)) {
+          return NextResponse.json({ error: "Unknown offer kind." }, { status: 400 });
+        }
+        update.kind = body.kind;
+      }
+
+      // Which tier a trial or discount applies to. Null means every one.
+      if ("plan_key" in body) {
+        update.plan_key = String(body.plan_key ?? "").trim() || null;
+      }
+
+      if (typeof body.once_per_user === "boolean") {
+        update.once_per_user = body.once_per_user;
+      }
     }
 
     if (Object.keys(update).length === 0) {
@@ -229,7 +267,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (body.entity === "offer") {
-      if (!["trial", "discount", "referral"].includes(kind)) {
+      if (!OFFER_KINDS.includes(kind)) {
         return NextResponse.json({ error: "Unknown offer kind." }, { status: 400 });
       }
 
@@ -261,5 +299,65 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Unknown entity." }, { status: 400 });
   } catch (error) {
     return failed(error, "Failed to create.");
+  }
+}
+
+/**
+ * Removing an offer.
+ *
+ * offer_redemptions.offer_id is ON DELETE CASCADE, so deleting an offer
+ * somebody has taken does not just remove the offer — it removes the
+ * record that they took it. That history is what a refund argument and
+ * a revenue number are both built on.
+ *
+ * So the rule is: an offer nobody has used is deleted outright, and one
+ * that has been used is stopped and hidden instead. The caller does not
+ * choose which; the redemption count does. The response says which
+ * happened so the UI can tell the truth about it.
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const auth = await requireAdmin(request, "config.economy");
+    if (auth.error) return auth.error;
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id") ?? "";
+    const entity = searchParams.get("entity") ?? "";
+
+    if (!id) return NextResponse.json({ error: "Missing id." }, { status: 400 });
+
+    if (entity !== "offer") {
+      return NextResponse.json(
+        { error: "Only offers can be removed here." },
+        { status: 400 },
+      );
+    }
+
+    const { data: offer, error: readError } = await auth.supabase
+      .from("premium_offers")
+      .select("id, redeemed")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (readError) throw readError;
+    if (!offer) return NextResponse.json({ error: "That offer is gone." }, { status: 404 });
+
+    if ((offer.redeemed ?? 0) > 0) {
+      const { error } = await auth.supabase
+        .from("premium_offers")
+        .update({ active: false, ends_at: new Date().toISOString() })
+        .eq("id", id);
+
+      if (error) throw error;
+
+      return NextResponse.json({ ok: true, archived: true, redeemed: offer.redeemed });
+    }
+
+    const { error } = await auth.supabase.from("premium_offers").delete().eq("id", id);
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true, archived: false });
+  } catch (error) {
+    return failed(error, "Failed to remove that offer.");
   }
 }

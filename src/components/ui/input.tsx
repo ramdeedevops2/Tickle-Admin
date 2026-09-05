@@ -16,7 +16,17 @@ import { cn } from "@/lib/utils"
  * 16px, and the fix is to be 16px until there is no touch keyboard to
  * worry about.
  */
-function Input({ className, type, onWheel, ...props }: React.ComponentProps<"input">) {
+function Input({
+  className,
+  type,
+  onWheel,
+  onKeyDown,
+  onPaste,
+  inputMode,
+  ...props
+}: React.ComponentProps<"input">) {
+  const numeric = type === "number";
+
   /*
    * A number field must not change because somebody scrolled the page.
    *
@@ -26,18 +36,61 @@ function Input({ className, type, onWheel, ...props }: React.ComponentProps<"inp
    * never typed and has no idea where the value came from. Blurring on
    * wheel gives the scroll back to the page.
    */
-  const handleWheel =
-    type === "number"
-      ? (event: React.WheelEvent<HTMLInputElement>) => {
-          (event.target as HTMLInputElement).blur();
-          onWheel?.(event);
+  const handleWheel = numeric
+    ? (event: React.WheelEvent<HTMLInputElement>) => {
+        (event.target as HTMLInputElement).blur();
+        onWheel?.(event);
+      }
+    : onWheel;
+
+  /*
+   * Numbers only, actually.
+   *
+   * type="number" sounds like it enforces this and does not: browsers
+   * accept "e" (scientific notation), "+" and "-" anywhere in the
+   * string. Worse, when the value is invalid the DOM reports it as
+   * empty — so typing "12e" gives an onChange of "", the field looks
+   * cleared, and Number("") is 0. A price silently becomes zero.
+   *
+   * Blocking the characters at the keystroke is the only way to keep
+   * the field's value and what is on screen the same thing.
+   */
+  const handleKeyDown = numeric
+    ? (event: React.KeyboardEvent<HTMLInputElement>) => {
+        if (["e", "E", "+"].includes(event.key)) event.preventDefault();
+
+        // A minus is allowed only where a negative is meaningful, which
+        // is anywhere the caller has said so with a negative min.
+        if (event.key === "-" && Number(props.min ?? 0) >= 0) {
+          event.preventDefault();
         }
-      : onWheel;
+
+        onKeyDown?.(event);
+      }
+    : onKeyDown;
+
+  /*
+   * The same rule for pasted text.
+   *
+   * Copying "₹1,299" out of a spreadsheet is the normal way this
+   * happens, and the field would take it and report empty.
+   */
+  const handlePaste = numeric
+    ? (event: React.ClipboardEvent<HTMLInputElement>) => {
+        const text = event.clipboardData.getData("text");
+        if (text && !/^-?\d*\.?\d*$/.test(text.trim())) event.preventDefault();
+        onPaste?.(event);
+      }
+    : onPaste;
 
   return (
     <InputPrimitive
       type={type}
       onWheel={handleWheel}
+      onKeyDown={handleKeyDown}
+      onPaste={handlePaste}
+      // Brings up the number pad on a phone rather than a full keyboard.
+      inputMode={inputMode ?? (numeric ? "decimal" : undefined)}
       data-slot="input"
       className={cn(
         "h-8 w-full min-w-0 rounded-lg border border-foreground/30 bg-card/70 px-3 py-1 text-base transition-all outline-none",

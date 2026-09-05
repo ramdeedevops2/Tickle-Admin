@@ -20,6 +20,19 @@ const REWARD_KINDS = [
   "pack_bonus",
 ];
 
+/*
+ * What an invite reward can pay, which is a shorter list.
+ *
+ * Promo codes and milestones were sharing REWARD_KINDS, and they do not
+ * share crediting code. award_referral() only has branches for roses and
+ * premium_days — picking anything else recorded the award and sent a
+ * notification saying the reward was in their wallet, while crediting
+ * nothing. 'super_likes' is not an oversight there: super likes are
+ * bought with roses rather than held as a balance, so there is no
+ * balance to add to.
+ */
+const MILESTONE_KINDS = ["roses", "premium_days"];
+
 const SEGMENTS = ["new", "premium", "free", "lapsed"];
 
 export async function GET(request: NextRequest) {
@@ -27,12 +40,17 @@ export async function GET(request: NextRequest) {
     const auth = await requireAdmin(request);
     if (auth.error) return auth.error;
 
-    const [codes, milestones, awards, redemptions, cities] = await Promise.all([
+    const [codes, milestones, awards, redemptions, cities, caps] = await Promise.all([
       auth.supabase.from("promo_codes").select("*").order("created_at", { ascending: false }),
       auth.supabase.from("referral_milestones").select("*").order("sort_order"),
       auth.supabase.from("referral_awards").select("milestone, referrer_id").limit(50000),
       auth.supabase.from("promo_redemptions").select("promo_id").limit(50000),
-      auth.supabase.from("cities").select("slug, name, live").order("name"),
+      auth.supabase.from("cities").select("slug, name, status").order("name"),
+      auth.supabase
+        .from("fairness_settings")
+        .select("referral_daily_cap, referral_total_cap")
+        .eq("id", 1)
+        .maybeSingle(),
     ]);
 
     if (codes.error) throw codes.error;
@@ -49,12 +67,23 @@ export async function GET(request: NextRequest) {
       codes: codes.data ?? [],
       milestones: milestones.data ?? [],
       rewardKinds: REWARD_KINDS,
-      // Offered as a list so a code cannot be scoped to a city that does
-      // not exist. Live ones first: those are the ones a campaign is
-      // almost always for.
-      cities: (cities.data ?? []).sort(
-        (a, b) => Number(b.live) - Number(a.live) || String(a.name).localeCompare(String(b.name)),
-      ),
+      milestoneKinds: MILESTONE_KINDS,
+      // What the anti-farm ceiling is set to. Shown beside the rewards
+      // because it is the reason a reward can look correct and still
+      // not pay: past this many, awards stop silently by design.
+      referralCaps: caps.data ?? null,
+      /*
+       * Offered as a list so a code cannot be scoped to a city that
+       * does not exist. Launched ones first: those are the ones a
+       * campaign is almost always for.
+       *
+       * The column is `status`, not `live`. Selecting a column that is
+       * not there fails the whole query — which is why this arrived
+       * empty and the city dropdown had nothing in it.
+       */
+      cities: ((cities.data ?? []) as { slug: string; name: string; status: string }[])
+        .map((row) => ({ ...row, live: row.status === "launched" }))
+        .sort((a, b) => Number(b.live) - Number(a.live) || a.name.localeCompare(b.name)),
       segments: SEGMENTS,
       referral: {
         awarded: (awards.data ?? []).length,
@@ -146,7 +175,8 @@ export async function PATCH(request: NextRequest) {
 
     if (!id) return NextResponse.json({ error: "Missing id." }, { status: 400 });
 
-    const table = body.entity === "milestone" ? "referral_milestones" : "promo_codes";
+    const isMilestone = body.entity === "milestone";
+    const table = isMilestone ? "referral_milestones" : "promo_codes";
 
     const update: Record<string, unknown> = {};
 
@@ -158,6 +188,82 @@ export async function PATCH(request: NextRequest) {
         return NextResponse.json({ error: "Value is out of range." }, { status: 400 });
       }
       update.reward_value = Math.round(value);
+    }
+
+    /*
+     * What kind of reward, not just how much.
+     *
+     * Checked against the list rather than passed through: reward_kind
+     * is read by the crediting function, and an unrecognised value
+     * there is a reward that silently never pays. Milestones get the
+     * shorter list — see MILESTONE_KINDS.
+     */
+    if ("reward_kind" in body) {
+      const kind = String(body.reward_kind);
+      const allowed = isMilestone ? MILESTONE_KINDS : REWARD_KINDS;
+      if (!allowed.includes(kind)) {
+        return NextResponse.json({ error: "Unknown reward." }, { status: 400 });
+      }
+      update.reward_kind = kind;
+    }
+
+    /*
+     * The wording members read.
+     *
+     * Editable because these are sentences shown in the app — "They
+     * joined" is a choice about tone, not a database key. The key
+     * itself is never editable: it is what the crediting code matches
+     * on, and renaming it would stop the reward paying.
+     */
+    if (typeof body.label === "string") {
+      const label = body.label.trim();
+      if (label.length < 2) {
+        return NextResponse.json({ error: "That needs a name." }, { status: 400 });
+      }
+      update.label = label;
+    }
+
+    if (isMilestone) {
+      /*
+       * Who gets paid.
+       *
+       * Both can be on — that is a referral that thanks the inviter and
+       * welcomes the new person. Neither cannot: a milestone paying
+       * nobody still writes an award row and still sends a notification
+       * promising a reward, so it reads as working while doing nothing.
+       * The same check exists as a table constraint; this one is here
+       * to give a sentence back instead of a Postgres error string.
+       */
+      if (typeof body.rewards_referrer === "boolean") {
+        update.rewards_referrer = body.rewards_referrer;
+      }
+      if (typeof body.rewards_invitee === "boolean") {
+        update.rewards_invitee = body.rewards_invitee;
+      }
+
+      const referrer = update.rewards_referrer ?? body.current_rewards_referrer;
+      const invitee = update.rewards_invitee ?? body.current_rewards_invitee;
+
+      if (referrer === false && invitee === false) {
+        return NextResponse.json(
+          { error: "A reward has to pay somebody — pick the inviter, the new member, or both." },
+          { status: 400 },
+        );
+      }
+
+      // Shown to the invited person, who is not "they". Cleared back to
+      // null rather than empty string so the payout falls back to label.
+      if (typeof body.invitee_label === "string") {
+        update.invitee_label = body.invitee_label.trim() || null;
+      }
+
+      if ("sort_order" in body) {
+        const order = Number(body.sort_order);
+        if (!Number.isFinite(order) || order < 0 || order > 10000) {
+          return NextResponse.json({ error: "Order is out of range." }, { status: 400 });
+        }
+        update.sort_order = Math.round(order);
+      }
     }
 
     if (Object.keys(update).length === 0) {

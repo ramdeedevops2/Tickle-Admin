@@ -5,6 +5,7 @@ import { adminFetch } from "@/lib/adminFetch";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { useLiveTable } from "@/lib/useLiveTable";
 
 type Revenue = {
   gross_minor: number;

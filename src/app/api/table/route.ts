@@ -139,6 +139,28 @@ export async function GET(request: NextRequest) {
     // "select" cannot become a subquery.
     let query = auth.supabase.from(table).select(columns).limit(limit);
 
+    /*
+     * Staff are not members.
+     *
+     * Anybody who signs into this panel gets an auth user, and the
+     * signup trigger gives every auth user a profile row — so admins
+     * turned up in Members as half-empty profiles with no name, no age
+     * and no gender. They are not people who signed up for the app, and
+     * counting them inflates every total on the page.
+     *
+     * Filtered here rather than in the page so it holds for every
+     * caller and for the counts, not just the one list somebody
+     * remembered to fix.
+     */
+    if (table === "profiles") {
+      const { data: staff } = await auth.supabase.from("admin_profiles").select("id");
+      const ids = (staff ?? []).map((row) => (row as { id: string }).id);
+
+      if (ids.length > 0) {
+        query = query.not("user_id", "in", `(${ids.join(",")})`);
+      }
+    }
+
     if (orderBy) query = query.order(orderBy, { ascending });
 
     // One optional equality filter, which is all the panel's pages need.
@@ -194,6 +216,14 @@ export async function POST(request: NextRequest) {
     const results = await Promise.all(
       tables.map(async (entry) => {
         let query = auth.supabase.from(entry.table).select("*", { count: "exact", head: true });
+
+        // Same exclusion as the row query above: a member count that
+        // includes staff is wrong everywhere it is shown.
+        if (entry.table === "profiles") {
+          const { data: staff } = await auth.supabase.from("admin_profiles").select("id");
+          const ids = (staff ?? []).map((row) => (row as { id: string }).id);
+          if (ids.length > 0) query = query.not("user_id", "in", `(${ids.join(",")})`);
+        }
 
         // Lets "live stories" be a count rather than a fetch-and-length.
         if (entry.gt) query = query.gt(entry.gt[0], entry.gt[1]);

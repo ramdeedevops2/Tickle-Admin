@@ -23,6 +23,14 @@ type LogRow = {
   compared: number;
   attempt: number;
   duration_ms: number | null;
+  /**
+   * The profile photo that scored highest on this check.
+   *
+   * Null on a manual override, on a provider outage, and on older rows
+   * written before this was recorded. Never a selfie — those are still
+   * held for one request and written nowhere.
+   */
+  matched_photo: string | null;
   created_at: string;
 };
 
@@ -163,6 +171,8 @@ export async function POST(request: NextRequest) {
       p_reason: body.approved ? "match" : "no_match",
       p_compared: 0,
       p_duration_ms: null,
+      // No photo to name: a manual decision compared nothing.
+      p_matched_photo: null,
     });
 
     if (error) throw error;

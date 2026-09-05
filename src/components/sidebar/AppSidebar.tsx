@@ -18,6 +18,7 @@ import {
   LogOut,
   ListChecks,
   Coins,
+  Ticket,
   Flower2,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -86,6 +87,10 @@ const NAV: { heading: string; items: NavItem[] }[] = [
       // Roses first: it is the currency everything else is priced in.
       { name: "Roses", url: "/roses", icon: Flower2 },
       { name: "Plans & money", url: "/plans", icon: Coins },
+      // Codes had a tab inside Plans, which buried a screen that is
+      // looked at on its own — promo campaigns and invite rewards are
+      // not something you go to the pricing page to find.
+      { name: "Codes & invites", url: "/codes", icon: Ticket },
     ],
   },
   {

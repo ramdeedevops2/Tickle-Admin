@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { PagedList } from "@/components/ui/paged-list";
 import { Undo2, RefreshCw } from "lucide-react";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { useLiveTable } from "@/lib/useLiveTable";
 import { useConfirm } from "@/components/ui/confirm";
 
 /**

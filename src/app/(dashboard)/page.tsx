@@ -17,6 +17,7 @@ import { Skeleton, SkeletonStats } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { MetricsBand } from "@/components/MetricsBand";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { useLiveTable } from "@/lib/useLiveTable";
 import { useNames } from "@/lib/useNames";
 
 type ProfileRow = {

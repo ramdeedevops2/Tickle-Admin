@@ -10,6 +10,7 @@ import { AlertTriangle, RefreshCw } from "lucide-react";
 import { Pagination, paginate, usePagination } from "@/components/ui/pagination";
 import { EmptyState } from "@/components/ui/page";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { useLiveTable } from "@/lib/useLiveTable";
 
 /**
  * The moderation queue.

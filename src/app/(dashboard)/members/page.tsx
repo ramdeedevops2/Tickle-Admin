@@ -24,6 +24,7 @@ import Link from "next/link";
 import { Pagination, paginate, usePagination } from "@/components/ui/pagination";
 import { PageSkeleton } from "@/components/ui/page";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { useLiveTable } from "@/lib/useLiveTable";
 
 type ProfileRow = StrengthFields & {
   id: string;
