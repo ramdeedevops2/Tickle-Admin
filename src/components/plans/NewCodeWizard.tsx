@@ -28,6 +28,7 @@ export type CodeDraft = {
   code: string;
   label: string;
   kind: string;
+  plan_key: string;
   value: string;
   maxUses: string;
   days: string;
@@ -48,27 +49,37 @@ const REWARDS: Record<string, { label: string; unit: string; hint: string }> = {
     unit: "roses",
     hint: "Credited straight to their wallet.",
   },
-  premium_days: {
-    label: "Free Premium",
+  plan: {
+    label: "A plan",
     unit: "days",
-    hint: "Days of Premium, on top of anything they already have.",
+    hint: "Everything that plan includes, on top of any time they already have.",
   },
-  super_likes: {
-    label: "Free Super Likes",
-    unit: "Super Likes",
-    hint: "Added to their daily allowance, once.",
+  boost: {
+    label: "Boost",
+    unit: "days",
+    hint: "Higher up in other people's decks. Stacks with any boost they already have.",
   },
-  premium_discount: {
-    label: "Money off Premium",
-    unit: "% off",
-    hint: "A percentage off their next Premium purchase.",
-  },
-  pack_bonus: {
-    label: "Bonus on a rose pack",
-    unit: "% extra",
-    hint: "Extra roses on top of whatever pack they buy.",
+  incognito: {
+    label: "Private mode",
+    unit: "days",
+    hint: "Hidden from everyone. They can still look and still like.",
   },
 };
+
+/*
+ * Three kinds are missing on purpose.
+ *
+ * Super Likes, money off Premium and a bonus on a rose pack were all
+ * offered here, and redeem_promo() had no branch for any of them — a
+ * code set to one recorded the redemption, said it had paid, and
+ * credited nothing. 079 removed them rather than implementing them:
+ * Super Likes are an allowance rather than a balance, a discount has
+ * to happen in the store at checkout, and a pack bonus needs somewhere
+ * to wait until the next purchase.
+ *
+ * More can be added to a code after it is made, so this step is the
+ * first reward rather than the only one.
+ */
 
 /** Who a code can be limited to, said as a person rather than a flag. */
 const SEGMENTS: Record<string, string> = {
@@ -85,12 +96,14 @@ const STEPS = ["The code", "The reward", "Who and where", "Check it"] as const;
 
 export function NewCodeWizard({
   rewardKinds,
+  plans,
   cities,
   busy,
   onCancel,
   onCreate,
 }: {
   rewardKinds: string[];
+  plans: { key: string; label: string; days: number | null }[];
   cities: City[];
   busy: boolean;
   onCancel: () => void;
@@ -100,6 +113,7 @@ export function NewCodeWizard({
     code: "",
     label: "",
     kind: "roses",
+    plan_key: "",
     value: "25",
     maxUses: "100",
     days: "30",
@@ -143,7 +157,10 @@ export function NewCodeWizard({
    */
   const complete = useMemo(() => {
     if (step === 0) return draft.code.trim().length >= 3 && draft.label.trim().length >= 2;
-    if (step === 1) return draft.value.trim() !== "" && Number.isFinite(Number(draft.value));
+    if (step === 1) {
+      if (draft.kind === "plan" && !draft.plan_key) return false;
+      return draft.value.trim() !== "" && Number.isFinite(Number(draft.value));
+    }
     return true;
   }, [step, draft]);
 
@@ -260,6 +277,33 @@ export function NewCodeWizard({
                       className="w-full"
                     />
                   </Field>
+
+                  {/* Which tier, when the reward is a plan. Named rather
+                      than implied, so a code cannot quietly hand out the
+                      most expensive thing on sale. */}
+                  {draft.kind === "plan" && (
+                    <Field
+                      id="plan_key"
+                      label="Which plan"
+                      hint="They get everything that plan includes."
+                      required
+                    >
+                      <Select
+                        value={draft.plan_key}
+                        onChange={(v) => set("plan_key", v)}
+                        options={[
+                          { value: "", label: "Pick one" },
+                          ...plans.map((plan) => ({
+                            value: plan.key,
+                            label: plan.days
+                              ? `${plan.label} · ${plan.days} days`
+                              : plan.label,
+                          })),
+                        ]}
+                        className="w-full"
+                      />
+                    </Field>
+                  )}
 
                   <Field
                     id="value"

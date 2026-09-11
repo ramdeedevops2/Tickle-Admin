@@ -7,14 +7,8 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
 import { useConfirm } from "@/components/ui/confirm";
-import { Plus, Pencil, ArrowLeft, Star } from "lucide-react";
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+import { Plus, Pencil, Star } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 import { NewTierWizard, type Draft } from "@/components/plans/NewTierWizard";
 
 /**
@@ -55,7 +49,6 @@ type Plan = {
   sees_who_liked: boolean;
   can_hide_presence: boolean;
   can_incognito: boolean;
-  can_travel: boolean;
 };
 
 type Payload = {
@@ -65,54 +58,6 @@ type Payload = {
   membersByPlan: Record<string, number>;
 };
 
-type NumField = {
-  field: keyof Plan;
-  label: string;
-  hint: string;
-  /** Blank is allowed and means "no limit". */
-  unlimited?: boolean;
-};
-
-/**
- * The numbers, in groups.
- *
- * Grouped because eighteen fields in one column is a form nobody reads
- * to the bottom of, and because "what you can do each day" and "what
- * things cost" are different questions that share a table.
- */
-const GROUPS: { title: string; fields: NumField[] }[] = [
-  {
-    title: "Each day",
-    fields: [
-      {
-        field: "daily_interactions",
-        label: "Interactions",
-        hint: "Likes and comments share this. Blank means unlimited.",
-        unlimited: true,
-      },
-      { field: "daily_comments", label: "Comments", hint: "Counts against interactions too." },
-      { field: "daily_super_likes", label: "Super Likes", hint: "Its own budget." },
-      { field: "daily_paths_likes", label: "Paths Crossed likes", hint: "Likes to people whose path you crossed." },
-    ],
-  },
-  {
-    title: "Limits and costs",
-    fields: [
-      { field: "active_chat_limit", label: "Open chats", hint: "Conversations at once." },
-      { field: "super_like_rose_cost", label: "Super Like costs", hint: "Roses per Super Like once the daily ones are gone." },
-      { field: "signup_roses", label: "Roses on signup", hint: "Granted once, at account creation." },
-      { field: "visibility_multiplier", label: "Visibility boost", hint: "Multiplies deck position. Never the compatibility score." },
-    ],
-  },
-];
-
-/** The four things a tier either unlocks or does not. */
-const GATES: { field: keyof Plan; label: string; hint: string }[] = [
-  { field: "sees_who_liked", label: "Sees who liked them", hint: "The main thing people pay for." },
-  { field: "can_incognito", label: "Incognito browsing", hint: "Look at profiles without appearing in their likes." },
-  { field: "can_travel", label: "Travel to another city", hint: "Swipe somewhere they are not." },
-  { field: "can_hide_presence", label: "Hide presence", hint: "Hides online status, read receipts and typing." },
-];
 
 /** "30 days" → 30. Anything unparseable falls back to a week. */
 function historyDays(interval: string | null): number {
@@ -137,19 +82,65 @@ function blankDraft(free?: Plan): Draft {
     price: "",
     compare: "",
     days: "30",
+    product_id: "",
     daily_interactions: free?.daily_interactions == null ? "" : String(free.daily_interactions),
     daily_comments: n(free?.daily_comments, "3"),
     daily_super_likes: n(free?.daily_super_likes, "1"),
     daily_paths_likes: n(free?.daily_paths_likes, "5"),
     active_chat_limit: n(free?.active_chat_limit, "5"),
     super_like_rose_cost: n(free?.super_like_rose_cost, "5"),
-    signup_roses: n(free?.signup_roses, "10"),
     visibility_multiplier: n(free?.visibility_multiplier, "1"),
     expired_history_days: String(historyDays(free?.expired_history ?? null)),
     sees_who_liked: false,
-    can_incognito: false,
-    can_travel: false,
+    /*
+     * Inherited from free rather than hardcoded off, like the numbers
+     * above it.
+     *
+     * Private mode is on every plan, so a new tier starting with it off
+     * would take it away from whoever upgraded to that tier — paying
+     * money to lose something. The other three gates stay off by
+     * default because they genuinely are what a tier adds.
+     */
+    can_incognito: free?.can_incognito ?? true,
     can_hide_presence: false,
+  };
+}
+
+/**
+ * An existing tier, as wizard fields.
+ *
+ * Editing and creating are the same eighteen questions, so they are the
+ * same form — one asked with empty answers, one with the tier's own.
+ * Two forms meant a field added to the wizard had to be remembered in
+ * the editor, and the editor is where it was forgotten.
+ *
+ * Paise back to rupees, because the wizard collects rupees.
+ */
+function draftFrom(plan: Plan): Draft {
+  const n = (value: number | null | undefined, fallback: string) =>
+    value === null || value === undefined ? fallback : String(value);
+
+  const rupees = (minor: number | null) => (minor == null ? "" : String(minor / 100));
+
+  return {
+    label: plan.label,
+    tagline: plan.tagline,
+    price: rupees(plan.price_minor),
+    compare: rupees(plan.compare_minor),
+    days: plan.days == null ? "" : String(plan.days),
+    product_id: plan.product_id ?? "",
+    daily_interactions:
+      plan.daily_interactions == null ? "" : String(plan.daily_interactions),
+    daily_comments: n(plan.daily_comments, "3"),
+    daily_super_likes: n(plan.daily_super_likes, "1"),
+    daily_paths_likes: n(plan.daily_paths_likes, "5"),
+    active_chat_limit: n(plan.active_chat_limit, "5"),
+    super_like_rose_cost: n(plan.super_like_rose_cost, "5"),
+    visibility_multiplier: n(plan.visibility_multiplier, "1"),
+    expired_history_days: String(historyDays(plan.expired_history)),
+    sees_who_liked: plan.sees_who_liked,
+    can_incognito: plan.can_incognito,
+    can_hide_presence: plan.can_hide_presence,
   };
 }
 
@@ -246,7 +237,34 @@ export function PlanEditor() {
     [data, editing],
   );
 
-  if (!data) return null;
+  /*
+   * A skeleton in the shape of the grid, not a blank screen.
+   *
+   * This returned null while loading, so the page showed its heading
+   * over nothing and then snapped into a three-card grid — which reads
+   * as a failed request until the moment it does not.
+   */
+  if (!data) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-4 w-24 rounded-md" />
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {[0, 1, 2].map((index) => (
+            <div
+              key={index}
+              className="space-y-4 rounded-xl border border-foreground/[0.06] p-5"
+            >
+              <Skeleton className="h-4 w-28 rounded-md" />
+              <Skeleton className="h-3 w-40 rounded-md" />
+              <Skeleton className="h-8 w-24 rounded-lg" />
+              <Skeleton className="h-9 w-full rounded-lg" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -361,30 +379,42 @@ export function PlanEditor() {
         </button>
       </div>
 
-      {/* Keyed on the tier, so opening a different one is a fresh
-          component with freshly seeded fields rather than one that has
-          to notice the row underneath it changed. */}
+      {/*
+        Editing and creating are the same modal.
+
+        They were a side sheet and a wizard: two forms asking the same
+        eighteen questions in two layouts, which meant a field added to
+        one had to be remembered in the other. The wizard's grouping is
+        the better of the two — four short steps rather than a column
+        nobody reads to the bottom of — so editing uses it, with every
+        step open at once because the answers already exist.
+
+        Keyed on the tier, so opening a different one is a fresh
+        component with freshly seeded fields rather than one that has to
+        notice the row underneath it changed.
+      */}
       {open && (
-        <PlanSheet
+        <NewTierWizard
           key={open.key}
-          plan={open}
+          mode="edit"
+          planKey={open.key}
+          defaults={draftFrom(open)}
           busy={busy}
-          onClose={() => setEditing(null)}
-          onSave={patch}
+          onCancel={() => setEditing(null)}
+          onCreate={async (body) => {
+            await patch({ key: open.key, ...body });
+            setEditing(null);
+          }}
         />
       )}
 
-      {/* A tier that does not exist yet. Same panel, seeded from the
-          free row so the numbers start somewhere sensible rather than
-          at zero. */}
       {/*
-        Creating is a wizard, not this panel.
+        A tier that does not exist yet.
 
-        The panel is right for changing one field on a tier that exists.
-        It is wrong for building one from nothing: eighteen empty boxes
-        at once is how a tier ends up created with no price and defaults
-        nobody read. The wizard asks four short questions and writes
-        nothing until the last one.
+        Same modal, seeded from the free row so the numbers start
+        somewhere sensible rather than at zero, and stepped rather than
+        open: eighteen empty boxes at once is how a tier ends up created
+        with no price and defaults nobody read.
       */}
       {adding && (
         <NewTierWizard
@@ -401,298 +431,3 @@ export function PlanEditor() {
   );
 }
 
-/**
- * One tier, in full.
- *
- * A panel rather than an inline form: eighteen fields belong somewhere
- * with room, and opening one tier at a time is what keeps the grid
- * readable as the number of them grows.
- */
-function PlanSheet({
-  plan,
-  busy,
-  onClose,
-  onSave,
-}: {
-  plan: Plan;
-  busy: boolean;
-  onClose: () => void;
-  onSave: (body: Record<string, unknown>) => Promise<void>;
-}) {
-  /*
-   * Seeded once, from the row, by lazy useState.
-   *
-   * No effect and no set-during-render. The caller mounts this with
-   * key={plan.key}, so switching tiers is a fresh component with fresh
-   * initial state — which is what a keyed remount is for, and it
-   * avoids the re-seed-after-save problem an effect would have.
-   */
-  const [draft, setDraft] = useState<Record<string, string>>(() => {
-    const next: Record<string, string> = {};
-
-    for (const group of GROUPS) {
-      for (const f of group.fields) {
-        const value = plan[f.field];
-        next[String(f.field)] = value === null || value === undefined ? "" : String(value);
-      }
-    }
-
-    next.label = plan.label;
-    next.tagline = plan.tagline;
-    next.price = plan.price_minor == null ? "" : String(plan.price_minor / 100);
-    next.compare = plan.compare_minor == null ? "" : String(plan.compare_minor / 100);
-    next.days = plan.days == null ? "" : String(plan.days);
-    next.product_id = plan.product_id ?? "";
-    next.expired_history_days = String(historyDays(plan.expired_history));
-
-    return next;
-  });
-
-  const [gates, setGates] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(
-      GATES.map((gate) => [String(gate.field), Boolean(plan[gate.field])]),
-    ),
-  );
-
-  // A tier being created is never the free one, whatever it was seeded from.
-  const free = plan.key === "free";
-
-  const save = async () => {
-    const body: Record<string, unknown> = { key: plan.key };
-
-    for (const group of GROUPS) {
-      for (const f of group.fields) {
-        const raw = draft[String(f.field)] ?? "";
-        body[String(f.field)] = f.unlimited && raw.trim() === "" ? null : Number(raw);
-      }
-    }
-
-    body.label = draft.label;
-    body.tagline = draft.tagline;
-    body.expired_history_days = Number(draft.expired_history_days || "7");
-
-    if (!free) {
-      // Rupees in, paise out. Asking somebody to type 29900 for ₹299 is
-      // asking for the typo that ships a tier at ₹29,900.
-      body.price_minor = draft.price.trim() === "" ? null : Math.round(Number(draft.price) * 100);
-      body.compare_minor =
-        draft.compare.trim() === "" ? null : Math.round(Number(draft.compare) * 100);
-      body.days = draft.days.trim() === "" ? null : Number(draft.days);
-      body.product_id = draft.product_id;
-    }
-
-    for (const gate of GATES) body[String(gate.field)] = gates[String(gate.field)] ?? false;
-
-    await onSave(body);
-    onClose();
-  };
-
-  return (
-    <Sheet open onOpenChange={(next) => !next && onClose()}>
-      <SheetContent className="w-full sm:max-w-lg">
-        <SheetHeader>
-          <SheetTitle>{plan.label}</SheetTitle>
-          <SheetDescription>
-            {free
-              ? "What everybody gets before paying anything."
-              : "What this tier costs and what it unlocks."}
-          </SheetDescription>
-        </SheetHeader>
-
-        <div className="space-y-6 overflow-y-auto px-4 pb-24">
-          <Section title="Name">
-            <Field
-              id="label"
-              label="Shown in the app"
-              hint="The name on the pricing card."
-              value={draft.label ?? ""}
-              onChange={(v) => setDraft((p) => ({ ...p, label: v }))}
-            />
-            <Field
-              id="tagline"
-              label="One line under it"
-              hint="What this tier is for, in a sentence."
-              value={draft.tagline ?? ""}
-              onChange={(v) => setDraft((p) => ({ ...p, tagline: v }))}
-            />
-          </Section>
-
-          {/* Free is not sold, so it has no price to set. */}
-          {!free && (
-            <Section title="Price">
-              <Field
-                id="price"
-                label="Price in rupees"
-                hint="What it costs. Leave blank to keep it unsellable."
-                value={draft.price ?? ""}
-                onChange={(v) => setDraft((p) => ({ ...p, price: v }))}
-              />
-              <Field
-                id="compare"
-                label="Compare at"
-                hint="Struck-through price, for a saving. Blank for none."
-                value={draft.compare ?? ""}
-                onChange={(v) => setDraft((p) => ({ ...p, compare: v }))}
-              />
-              <Field
-                id="days"
-                label="Length in days"
-                hint="How long one purchase lasts."
-                value={draft.days ?? ""}
-                onChange={(v) => setDraft((p) => ({ ...p, days: v }))}
-              />
-              <Field
-                id="product_id"
-                label="Store product id"
-                hint="From Play Console or App Store Connect. Blank until set up."
-                value={draft.product_id ?? ""}
-                onChange={(v) => setDraft((p) => ({ ...p, product_id: v }))}
-              />
-            </Section>
-          )}
-
-          {GROUPS.map((group) => (
-            <Section key={group.title} title={group.title}>
-              {group.fields.map((f) => (
-                <Field
-                  key={String(f.field)}
-                  id={String(f.field)}
-                  label={f.label}
-                  hint={f.hint}
-                  value={draft[String(f.field)] ?? ""}
-                  placeholder={f.unlimited ? "Unlimited" : ""}
-                  onChange={(v) => setDraft((p) => ({ ...p, [String(f.field)]: v }))}
-                />
-              ))}
-            </Section>
-          ))}
-
-          <Section title="History">
-            <Field
-              id="expired_history_days"
-              label="Expired matches kept"
-              hint="Days an expired match can still be revived."
-              value={draft.expired_history_days ?? ""}
-              onChange={(v) => setDraft((p) => ({ ...p, expired_history_days: v }))}
-            />
-          </Section>
-
-          <Section title="What it unlocks">
-            {GATES.map((gate) => (
-              <div
-                key={String(gate.field)}
-                className="flex items-start justify-between gap-4 border-t border-foreground/[0.06] pt-3 first:border-0 first:pt-0"
-              >
-                <div className="min-w-0">
-                  <div className="text-[0.86rem] font-medium">{gate.label}</div>
-                  <p className="text-[0.8rem] leading-relaxed text-muted-foreground">
-                    {gate.hint}
-                  </p>
-                </div>
-                <Switch
-                  checked={gates[String(gate.field)] ?? false}
-                  onCheckedChange={(next) =>
-                    setGates((p) => ({ ...p, [String(gate.field)]: next }))
-                  }
-                />
-              </div>
-            ))}
-          </Section>
-
-          {!free && (
-            <Section title="Highlight">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <div className="text-[0.86rem] font-medium">Feature this tier</div>
-                  <p className="text-[0.8rem] leading-relaxed text-muted-foreground">
-                    Drawn larger in the app. Only one tier can be featured.
-                  </p>
-                </div>
-                <Switch
-                  checked={plan.featured}
-                  disabled={busy}
-                  onCheckedChange={(next) => onSave({ key: plan.key, featured: next })}
-                />
-              </div>
-            </Section>
-          )}
-        </div>
-
-        {/* Pinned, so Save is reachable from the bottom of a long form
-            without scrolling back up to find it. */}
-        <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 border-t border-foreground/[0.06] bg-card px-4 py-3">
-          <Button variant="outline" onClick={onClose} className="h-10 text-[0.86rem]">
-            <ArrowLeft className="mr-1.5 size-3.5" />
-            Back
-          </Button>
-          <Button onClick={save} disabled={busy} className="h-10 flex-1 text-[0.86rem]">
-            {busy ? "Saving" : "Save changes"}
-          </Button>
-        </div>
-      </SheetContent>
-    </Sheet>
-  );
-}
-
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="space-y-4">
-      <h4 className="text-[0.8rem] font-bold uppercase tracking-wide text-muted-foreground">
-        {title}
-      </h4>
-      {children}
-    </div>
-  );
-}
-
-/**
- * One labelled field.
- *
- * The hint sits between the label and the box because it says what to
- * type — underneath means reading it after the mistake.
- */
-function Field({
-  id,
-  label,
-  hint,
-  value,
-  placeholder,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  hint: string;
-  value: string;
-  placeholder?: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-[0.86rem] font-medium">
-        {label}
-      </label>
-      <p className="text-[0.8rem] leading-relaxed text-muted-foreground">{hint}</p>
-      <Input
-        id={id}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={placeholder}
-        /*
-         * Everything here is a number except the name, the tagline and
-         * the store product id.
-         *
-         * Declared per field rather than left as text, because a price
-         * that accepts letters is a price that reaches the server as
-         * NaN — and the failure surfaces as a constraint error nobody
-         * can trace back to the box they typed in.
-         */
-        type={TEXT_FIELDS.has(id) ? undefined : "number"}
-        min={0}
-        className="h-11 px-3"
-      />
-    </div>
-  );
-}
-
-/** The three fields on a tier that are genuinely words. */
-const TEXT_FIELDS = new Set(["label", "tagline", "product_id"]);

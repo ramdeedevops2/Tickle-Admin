@@ -4,6 +4,7 @@ import { DataToolbar } from "@/components/DataToolbar";
 import Link from "next/link";
 import { adminTable } from "@/lib/adminFetch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { StatStrip } from "@/components/ui/stat-strip";
 import { EmptyState } from "@/components/ui/page";
@@ -459,7 +460,11 @@ export function MessageStreamPanel() {
         {/* Who is talking */}
         <div className={cn(PANE, selected && "hidden lg:flex")}>
           <div className="border-b border-foreground/[0.06] px-4 py-3 text-[0.92rem] text-muted-foreground">
-            {loading ? "Loading…" : `${visible.length} conversations`}
+            {loading ? (
+              <Skeleton className="h-3.5 w-28 rounded-md" />
+            ) : (
+              `${visible.length} conversations`
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto">

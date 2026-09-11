@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PageSkeleton } from "@/components/ui/page";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
@@ -78,10 +80,27 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     };
   }, [router]);
 
+  /*
+   * The shape of the panel, not a spinner in the middle of nothing.
+   *
+   * This is the first thing anybody sees. A lone spinner says only
+   * "wait"; a sidebar and a page block say what is arriving, so when it
+   * lands nothing jumps.
+   */
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="h-8 w-8 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+      <div className="flex min-h-screen bg-background">
+        <div className="hidden w-64 shrink-0 flex-col gap-2 border-r border-foreground/[0.06] p-4 lg:flex">
+          <Skeleton className="h-9 w-36 rounded-lg" />
+          <div className="h-4" />
+          {Array.from({ length: 8 }).map((_, index) => (
+            <Skeleton key={index} className="h-9 w-full rounded-lg" />
+          ))}
+        </div>
+
+        <div className="min-w-0 flex-1 p-6">
+          <PageSkeleton sections={3} />
+        </div>
       </div>
     );
   }

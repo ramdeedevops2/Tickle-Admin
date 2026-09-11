@@ -2,6 +2,7 @@
 import { useCallback, useState } from "react";
 import { adminFetch } from "@/lib/adminFetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SkeletonCard } from "@/components/ui/skeleton";
 import { PagedList } from "@/components/ui/paged-list";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -114,7 +115,14 @@ export function RoseWallet({ userId }: { userId: string }) {
     [amount, userId, data, load, confirm],
   );
 
-  if (!data) return null;
+  // A wallet-shaped placeholder rather than a gap that fills in.
+  if (!data) {
+    return (
+      <div className="space-y-3">
+        <SkeletonCard lines={3} />
+      </div>
+    );
+  }
 
   return (
     <Card className="border-foreground/[0.06] bg-card">

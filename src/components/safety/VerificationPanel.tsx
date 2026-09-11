@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { adminFetch } from "@/lib/adminFetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SkeletonStats, SkeletonTable } from "@/components/ui/skeleton";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -207,8 +208,9 @@ export function VerificationPanel() {
       )}
 
       {loading || !data ? (
-        <div className="py-16 text-center text-muted-foreground">
-          Loading...
+        <div className="space-y-4">
+          <SkeletonStats count={4} />
+          <SkeletonTable rows={5} />
         </div>
       ) : data.stats.checks === 0 ? (
         <Card className="border-foreground/[0.06] bg-card">

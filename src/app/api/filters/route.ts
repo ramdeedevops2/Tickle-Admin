@@ -9,10 +9,11 @@ import { failed, requireAdmin } from "@/lib/supabase/admin";
  * means the decision can be revisited from usage rather than argued
  * about up front.
  *
- * One guard worth understanding: `column_name` has to be a real column
- * on `profiles`. Nothing in the database checks that, and a typo
- * produces a filter that silently matches nobody — so POST tries to
- * select the column before writing, and refuses if it does not resolve.
+ * Filters are not created here. One has to match a column the app
+ * already stores, so a form that invented them produced something that
+ * looked live and matched nobody. This route reads them, and flips the
+ * two things about a filter that are genuinely a decision: whether it
+ * is free, and whether it is offered at all.
  */
 
 const KINDS = ["range", "choice", "multi", "boolean", "distance"];
@@ -133,85 +134,11 @@ export async function PATCH(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const auth = await requireAdmin(request);
-    if (auth.error) return auth.error;
-
-    const body = (await request.json()) as Record<string, unknown>;
-
-    const key = String(body.key ?? "").trim();
-    const label = String(body.label ?? "").trim();
-    const column = String(body.column_name ?? "").trim();
-    const kind = String(body.kind ?? "");
-    const groupKey = String(body.group_key ?? "").trim();
-
-    if (!key || !label || !column || !groupKey) {
-      return NextResponse.json(
-        { error: "Key, label, column and group are all required." },
-        { status: 400 },
-      );
-    }
-
-    if (!KINDS.includes(kind)) {
-      return NextResponse.json({ error: "Unknown filter kind." }, { status: 400 });
-    }
-
-    /*
-     * The column has to exist.
-     *
-     * A filter pointing at a misspelled column is not an error anywhere
-     * — it just quietly matches nobody, and the person who set it will
-     * conclude the filter works and that nobody fits.
-     *
-     * `distance` is the exception: it is computed by the pool query
-     * rather than read from a column.
-     */
-    if (kind !== "distance") {
-      /*
-       * Selecting the column is the check.
-       *
-       * PostgREST rejects an unknown column outright, so a query that
-       * returns without error proves it exists. limit(0) means no rows
-       * are read to find that out.
-       */
-      const { error: columnError } = await auth.supabase
-        .from("profiles")
-        .select(column)
-        .limit(0);
-
-      if (columnError) {
-        return NextResponse.json(
-          { error: `profiles has no column named "${column}".` },
-          { status: 400 },
-        );
-      }
-    }
-
-    const { data, error } = await auth.supabase
-      .from("filter_definitions")
-      .insert({
-        key,
-        label,
-        column_name: column,
-        kind,
-        group_key: groupKey,
-        free: body.free === true,
-        hint: String(body.hint ?? "").trim() || null,
-        sort_order: Number(body.sort_order ?? 999),
-      })
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === "23505") {
-        return NextResponse.json({ error: "That filter key already exists." }, { status: 409 });
-      }
-      throw error;
-    }
-
-    return NextResponse.json({ row: data });
-  } catch (error) {
-    return failed(error, "Failed to add that filter.");
-  }
-}
+/*
+ * No POST.
+ *
+ * Creating a filter from the panel is gone. A filter has to match a
+ * column the app already stores, so inventing one from a form produced
+ * something that looked live and quietly matched nobody — the fields
+ * themselves are the place new ones come from.
+ */

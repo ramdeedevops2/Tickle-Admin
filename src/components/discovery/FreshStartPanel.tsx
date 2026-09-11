@@ -6,6 +6,7 @@ import { Sparkles } from "lucide-react";
 import { adminFetch, adminTable } from "@/lib/adminFetch";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
 import { Button } from "@/components/ui/button";
+import { SkeletonCard } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Combobox } from "@/components/ui/combobox";
 import { SwitchRow } from "@/components/ui/switch";
@@ -161,7 +162,7 @@ export function FreshStartPanel() {
   );
 
   if (loading && !data) {
-    return <p className="text-[0.92rem] text-muted-foreground">Loading…</p>;
+    return <SkeletonCard lines={4} />;
   }
 
   if (data && !data.ready) {

@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { adminTable } from "@/lib/adminFetch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,7 +20,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { RefreshCw, Trash2, UserPlus } from "lucide-react";
-import { ConfigHistory } from "@/components/ConfigHistory";
 import { PageSkeleton } from "@/components/ui/page";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
 import { useConfirm } from "@/components/ui/confirm";
@@ -93,12 +93,11 @@ export default function AccessPage() {
   );
 }
 
-type Tab = "people" | "roles" | "history";
+type Tab = "people" | "roles";
 
 const TABS: { value: Tab; label: string }[] = [
   { value: "people", label: "People" },
   { value: "roles", label: "What they can do" },
-  { value: "history", label: "What changed" },
 ];
 
 /** One line per tab, so landing on one you did not pick still explains itself. */
@@ -107,7 +106,6 @@ const BLURB: Record<Tab, string> = {
     "Everybody who can sign into this panel. Adding somebody emails them an invitation; removing somebody takes their access away at once and leaves their member account alone.",
   roles:
     "What each role is allowed to do. Change a role and it changes for everybody who holds it.",
-  history: "Every change made in this panel, by whom, and when.",
 };
 
 function AccessView() {
@@ -115,7 +113,7 @@ function AccessView() {
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>(() => {
     const asked = searchParams.get("tab");
-    return asked === "roles" || asked === "history" ? asked : "people";
+    return asked === "roles" ? asked : "people";
   });
 
   // The palette links here as /access?new=1, which should land with the
@@ -299,7 +297,6 @@ function AccessView() {
 
       {tab === "roles" && <RolesPanel />}
 
-      {tab === "history" && <ConfigHistory />}
 
       {tab === "people" && (
         <>
@@ -401,14 +398,15 @@ function AccessView() {
                 </TableHeader>
                 <TableBody>
                   {loading ? (
-                    <TableRow>
-                      <TableCell
-                        colSpan={4}
-                        className="h-24 text-center text-muted-foreground"
-                      >
-                        Loading…
-                      </TableCell>
-                    </TableRow>
+                    [0, 1, 2, 3, 4].map((rowIndex) => (
+                <TableRow key={rowIndex}>
+                  {Array.from({ length: 4 }).map((_, cellIndex) => (
+                    <TableCell key={cellIndex}>
+                      <Skeleton className="h-3.5 w-full rounded-md" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
                   ) : profiles.length === 0 ? (
                     <TableRow>
                       <TableCell

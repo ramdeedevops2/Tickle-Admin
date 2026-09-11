@@ -228,7 +228,31 @@ const SECTIONS: Section[] = [
   },
 ];
 
-export function RulesEditor() {
+/**
+ * Which groups to show.
+ *
+ * Every one of these lived on the Messaging screen, because that is
+ * where somebody happened to put them — eight groups of settings, of
+ * which one was about messaging. The invite caps were the worst of it:
+ * the Codes screen displayed them and could not change them, so
+ * editing a number shown on one page meant finding it at the bottom of
+ * another.
+ *
+ * Now each screen renders its own. The component stays one file
+ * because they share a table, a save path and a draft state; only what
+ * is displayed differs.
+ */
+export type RuleGroup =
+  | "Matches"
+  | "Revival"
+  | "Verification"
+  | "Paid media"
+  | "Messaging"
+  | "Referrals"
+  | "Going quiet"
+  | "Safety and leaving";
+
+export function RulesEditor({ groups }: { groups: RuleGroup[] }) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [options, setOptions] = useState<RetentionOption[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -308,7 +332,9 @@ export function RulesEditor() {
 
       {error && <p className="text-[0.92rem] text-destructive">{error}</p>}
 
-      {SECTIONS.map((section) => {
+      {SECTIONS.filter((section) =>
+        groups.includes(section.title as RuleGroup),
+      ).map((section) => {
         const dirty =
           section.fields.some((f) => String(settings[f.key]) !== draft[f.key]) ||
           (section.retention === true &&

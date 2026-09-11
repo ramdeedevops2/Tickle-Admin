@@ -3,6 +3,7 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { PageHeader, Explainer, PageSkeleton } from "@/components/ui/page";
+import { RulesEditor } from "@/components/RulesEditor";
 import { Segmented } from "@/components/ui/select";
 import { MatchesPanel } from "@/components/connections/MatchesPanel";
 import { InterestPanel } from "@/components/connections/InterestPanel";
@@ -55,7 +56,15 @@ function ConnectionsView() {
 
       <Explainer>{BLURB[tab]}</Explainer>
 
-      {tab === "matches" && <MatchesPanel />}
+      {tab === "matches" && (
+        <>
+          <MatchesPanel />
+          {/* How long a match lasts and what reviving one costs. Both
+              lived on Messaging, which is not where anybody would look
+              for how long a match survives. */}
+          <RulesEditor groups={["Matches", "Revival"]} />
+        </>
+      )}
       {tab === "interest" && <InterestPanel />}
     </div>
   );

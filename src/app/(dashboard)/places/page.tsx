@@ -18,6 +18,7 @@ import { ExternalLink, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
 import { useConfirm } from "@/components/ui/confirm";
 import { Pagination, paginate, usePagination } from "@/components/ui/pagination";
+import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page";
 import { Segmented } from "@/components/ui/select";
 import { VenueRulesPanel } from "@/components/places/VenueRulesPanel";
@@ -249,11 +250,15 @@ export default function PlacesPage() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                  Loading…
-                </TableCell>
-              </TableRow>
+              [0, 1, 2, 3, 4].map((rowIndex) => (
+                <TableRow key={rowIndex}>
+                  {Array.from({ length: 7 }).map((_, cellIndex) => (
+                    <TableCell key={cellIndex}>
+                      <Skeleton className="h-3.5 w-full rounded-md" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
             ) : visible.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">

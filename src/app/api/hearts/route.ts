@@ -101,18 +101,36 @@ export async function GET(request: NextRequest) {
       name: names.get(id) ?? "Unnamed member",
     });
 
+    /*
+     * Hearts whose dropper is gone do not appear.
+     *
+     * dropper_id is a bare uuid rather than a foreign key — the live
+     * profiles table has no unique constraint to reference — so
+     * deleting an account leaves its hearts behind. 004 said such rows
+     * "simply stop appearing rather than dangling", and everywhere else
+     * that is true because the reads join profiles. This route does not
+     * join; it looks names up separately and falls back to a label, so
+     * the whole list read as "Deleted account at Hungry Point".
+     *
+     * A heart is somebody being somewhere. With nobody attached it is
+     * not a moderation record, it is a row.
+     */
+    const live = (id: string) => profileById.has(id);
+
     return NextResponse.json({
-      hearts: hearts.map((row) => ({
+      hearts: hearts.filter((row) => live(row.dropper_id)).map((row) => ({
         ...row,
         place: placeById.get(row.place_id) ?? null,
         dropper: named(row.dropper_id),
       })),
-      sparks: sparks.map((row) => ({
-        ...row,
-        place: placeById.get(row.place_id) ?? null,
-        dropper: named(row.dropper_id),
-        picker: named(row.picker_id),
-      })),
+      sparks: sparks
+        .filter((row) => live(row.dropper_id) && live(row.picker_id))
+        .map((row) => ({
+          ...row,
+          place: placeById.get(row.place_id) ?? null,
+          dropper: named(row.dropper_id),
+          picker: named(row.picker_id),
+        })),
     });
   } catch (error) {
     return failed(error, "Failed to load hearts.");

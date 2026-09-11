@@ -2,6 +2,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { adminFetch } from "@/lib/adminFetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { RulesEditor } from "@/components/RulesEditor";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -535,6 +536,11 @@ export default function CompatibilityPage() {
             hint="How long somebody waits after a pass, and how widely one profile may be shown."
           />
           <FairnessEditor />
+
+          {/* When somebody counts as inactive, and how much that costs
+              them in the deck. It is a ranking rule, so it sits with
+              the rest of who gets seen. */}
+          <RulesEditor groups={["Going quiet"]} />
 
           <div id="fresh-start" className="scroll-mt-24 space-y-5">
             <Divider

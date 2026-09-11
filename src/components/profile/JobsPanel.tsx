@@ -37,6 +37,31 @@ type Payload = {
   retiredCount: number;
 };
 
+/**
+ * Where a job sits in the picker, in words.
+ *
+ * popularity is a 0-100 integer that breaks ties in the search. Three
+ * bands is every distinction anybody actually makes with it, and the
+ * numbers are far enough apart that a job in one band can never sort
+ * into another.
+ */
+const RANKS = { top: 90, normal: 50, bottom: 10 } as const;
+
+type Rank = keyof typeof RANKS;
+
+const RANK_OPTIONS = [
+  { value: "top", label: "Near the top" },
+  { value: "normal", label: "Normal" },
+  { value: "bottom", label: "Near the bottom" },
+];
+
+/** Which band a stored number falls in. */
+function rankOf(popularity: number): Rank {
+  if (popularity >= 70) return "top";
+  if (popularity <= 30) return "bottom";
+  return "normal";
+}
+
 export function JobsPanel() {
   const [rows, setRows] = useState<Profession[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -223,7 +248,7 @@ export function JobsPanel() {
                 <th className="px-4 py-3 font-medium">Name</th>
                 <th className="px-4 py-3 font-medium">Category</th>
                 <th className="px-4 py-3 font-medium">Also found by</th>
-                <th className="px-4 py-3 font-medium">Rank</th>
+                <th className="px-4 py-3 font-medium">Where it shows</th>
                 <th className="px-4 py-3 font-medium text-right">In picker</th>
               </tr>
             </thead>

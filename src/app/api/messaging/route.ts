@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     const auth = await requireAdmin(request);
     if (auth.error) return auth.error;
 
-    const [settings, retention, glimpse, volume, saves] = await Promise.all([
+    const [settings, retention, glimpse, volume, captures] = await Promise.all([
       auth.supabase.from("fairness_settings").select("*").eq("id", 1).single(),
       auth.supabase.from("retention_options").select("*").order("sort_order"),
       auth.supabase.from("glimpse_options").select("*").order("sort_order"),
@@ -69,7 +69,10 @@ export async function GET(request: NextRequest) {
         // zero the price is wrong, not the feature.
         saved: rows.filter((row) => row.saved_at !== null).length,
       },
-      captures: (saves.data ?? []).length,
+      // Screenshots and recordings people reported. Named for what it
+      // is: it held `saves`, which is a different number entirely and
+      // sits two lines above.
+      captures: (captures.data ?? []).length,
     });
   } catch (error) {
     return failed(error, "Failed to load messaging settings.");

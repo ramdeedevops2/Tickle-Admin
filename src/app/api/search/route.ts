@@ -130,16 +130,15 @@ const SOURCES: {
     hint: (row) => String(row.label ?? ""),
     href: () => "/codes",
   },
-  {
-    table: "premium_offers",
-    kind: "offer",
-    group: "Trials and offers",
-    select: "id, key, label, body",
-    columns: ["label", "key", "body"],
-    label: (row) => String(row.label ?? ""),
-    hint: (row) => String(row.body ?? ""),
-    href: () => "/plans",
-  },
+  /*
+   * premium_offers is not searched.
+   *
+   * It had an entry here pointing at /plans, which stopped being true
+   * when the trials section was removed: the rows still exist, so the
+   * search still found them, and every result led to a page with
+   * nowhere to show them. A short membership is a tier now, and the
+   * `plans` entry below already finds those.
+   */
   {
     table: "plans",
     kind: "plan",

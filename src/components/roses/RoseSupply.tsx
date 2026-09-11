@@ -198,27 +198,38 @@ export function RoseEarning({ data, patch, busy }: PanelProps) {
 
   return (
     <div className="space-y-6">
+      {/*
+        Free only, because free is the only one that can apply.
+
+        grant_signup_roses() fires once when a profile goes live and
+        reads `signup_roses` from the free row specifically — everybody
+        is on free at that moment, since nobody arrives having already
+        paid. Listing the paid tiers here offered three numbers that
+        looked live, could be edited, and could never take effect.
+      */}
       <Section
         title="Signing up"
-        hint="Given once, when their profile goes live."
+        hint="Given once, when their profile goes live. Everybody starts on Free, so this is the only plan it can come from."
       >
         <SettingList>
-          {data.plans.map((plan) => (
-            <SettingRow
-              key={plan.key}
-              label={plan.label || plan.key}
-              control={
-                <NumberField
-                  value={plan.signup_roses}
-                  disabled={busy}
-                  suffix="roses"
-                  onCommit={(value) =>
-                    patch({ field: "signup_roses", value, key: plan.key })
-                  }
-                />
-              }
-            />
-          ))}
+          {data.plans
+            .filter((plan) => plan.key === "free")
+            .map((plan) => (
+              <SettingRow
+                key={plan.key}
+                label={plan.label || plan.key}
+                control={
+                  <NumberField
+                    value={plan.signup_roses}
+                    disabled={busy}
+                    suffix="roses"
+                    onCommit={(value) =>
+                      patch({ field: "signup_roses", value, key: plan.key })
+                    }
+                  />
+                }
+              />
+            ))}
         </SettingList>
       </Section>
 

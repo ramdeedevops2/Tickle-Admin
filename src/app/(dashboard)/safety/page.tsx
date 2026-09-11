@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { adminFetch } from "@/lib/adminFetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { RulesEditor } from "@/components/RulesEditor";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -335,8 +336,21 @@ function SafetyView() {
 
       {view === "patterns" && <SafetyRulesPanel />}
       {view === "tickets" && <TicketsPanel />}
-      {view === "verification" && <VerificationPanel />}
+      {view === "verification" && (
+        <>
+          <VerificationPanel />
+          {/* The thresholds the face check actually uses. */}
+          <RulesEditor groups={["Verification"]} />
+        </>
+      )}
       {view === "dailies" && <DailiesPanel />}
+
+      {view === "reports" && (
+        /* How long somebody has to report, and the grace period before
+           a deleted account is really gone. Both are moderation rules
+           and neither had anything to do with messaging. */
+        <RulesEditor groups={["Safety and leaving"]} />
+      )}
 
       {view === "reports" && (
         <>

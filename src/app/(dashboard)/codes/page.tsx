@@ -1,6 +1,7 @@
 "use client";
 
 import { PageHeader, Explainer } from "@/components/ui/page";
+import { RulesEditor } from "@/components/RulesEditor";
 import { CodesPanel } from "@/components/plans/CodesPanel";
 
 /*
@@ -28,6 +29,12 @@ export default function CodesPage() {
       </Explainer>
 
       <CodesPanel />
+
+      {/* The invite caps, editable where they are shown.
+          CodesPanel already displayed these two numbers and could not
+          change them — editing something visible here meant finding it
+          at the bottom of the Messaging screen. */}
+      <RulesEditor groups={["Referrals"]} />
     </div>
   );
 }

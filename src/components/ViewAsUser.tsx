@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { adminFetch } from "@/lib/adminFetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SkeletonCard } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Eye } from "lucide-react";
 
@@ -72,7 +73,7 @@ export function ViewAsUser({ userId }: { userId: string }) {
 
       <CardContent className="space-y-4 text-[0.92rem]">
         {error && <p className="text-destructive">{error}</p>}
-        {!data && !error && <p className="text-muted-foreground">Loading…</p>}
+        {!data && !error && <SkeletonCard lines={5} />}
 
         {data && (
           <>

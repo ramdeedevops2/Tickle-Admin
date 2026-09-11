@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Eye, Filter } from "lucide-react";
@@ -348,14 +349,15 @@ function MembersView() {
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow>
-                <TableCell
-                  colSpan={6}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  Loading…
-                </TableCell>
-              </TableRow>
+              [0, 1, 2, 3, 4].map((rowIndex) => (
+                <TableRow key={rowIndex}>
+                  {Array.from({ length: 6 }).map((_, cellIndex) => (
+                    <TableCell key={cellIndex}>
+                      <Skeleton className="h-3.5 w-full rounded-md" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
             ) : error ? (
               <TableRow>
                 <TableCell

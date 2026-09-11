@@ -8,7 +8,19 @@ import { Pencil, Plus } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { Skeleton } from "@/components/ui/skeleton";
 import { NewCodeWizard, type CodeDraft } from "@/components/plans/NewCodeWizard";
+import {
+  CodeRow,
+  type PromoCode,
+  type PromoReward,
+} from "@/components/plans/CodeRow";
+import {
+  MilestoneRow,
+  type Milestone,
+  type Reward,
+  type RewardPlan,
+} from "@/components/plans/MilestoneRow";
 
 /**
  * Codes you hand out, and rewards for inviting friends.
@@ -24,40 +36,18 @@ import { NewCodeWizard, type CodeDraft } from "@/components/plans/NewCodeWizard"
  * switched on or off.
  */
 
-type PromoCode = {
-  id: string;
-  code: string;
-  label: string;
-  reward_kind: string;
-  reward_value: number;
-  city: string | null;
-  segment: string | null;
-  max_uses: number | null;
-  used: number;
-  ends_at: string | null;
-  active: boolean;
-};
-
-type Milestone = {
-  id: string;
-  key: string;
-  label: string;
-  invitee_label: string | null;
-  reward_kind: string;
-  reward_value: number;
-  rewards_referrer: boolean;
-  rewards_invitee: boolean;
-  sort_order: number;
-  active: boolean;
-};
-
 type City = { slug: string; name: string; live?: boolean };
 
 type Payload = {
   codes: PromoCode[];
   milestones: Milestone[];
+  /** What each step pays. One row per reward, per side. */
+  rewards: Reward[];
+  /** What each promo code pays. */
+  promoRewards: PromoReward[];
+  /** Plans a reward can grant. Free is never one. */
+  rewardPlans: RewardPlan[];
   rewardKinds: string[];
-  milestoneKinds: string[];
   referralCaps: { referral_daily_cap: number; referral_total_cap: number } | null;
   cities: City[];
   referral: {
@@ -66,37 +56,6 @@ type Payload = {
     perMilestone: Record<string, number>;
   };
   totalRedemptions: number;
-};
-
-/**
- * A reward, in words rather than in column values.
- *
- * The list showed "25 roses" and "3 premium_days" side by side, so half
- * the rows read as English and half as a schema.
- */
-function rewardText(kind: string, value: number): string {
-  switch (kind) {
-    case "roses":
-      return `${value} free roses`;
-    case "premium_days":
-      return `${value} days of Premium`;
-    case "super_likes":
-      return `${value} Super Likes`;
-    case "premium_discount":
-      return `${value}% off Premium`;
-    case "pack_bonus":
-      return `${value}% extra on a rose pack`;
-    default:
-      return `${value} ${kind}`;
-  }
-}
-
-/** Who a code is limited to, said as a person. */
-const AUDIENCE: Record<string, string> = {
-  new: "new members only",
-  free: "people who have never paid",
-  premium: "paying members only",
-  lapsed: "people whose Premium ran out",
 };
 
 export function CodesPanel() {
@@ -131,6 +90,7 @@ export function CodesPanel() {
           label: draft.label.trim(),
           reward_kind: draft.kind,
           reward_value: Number(draft.value),
+          plan_key: draft.plan_key || null,
           // Blank means no limit, and Number("") is 0 — which would be
           // a code nobody can redeem rather than one anybody can.
           max_uses: draft.maxUses.trim() ? Number(draft.maxUses) : null,
@@ -218,8 +178,28 @@ export function CodesPanel() {
           <PagedList
             items={data?.codes ?? []}
             perPage={10}
+            /*
+             * A skeleton while loading, not an empty box.
+             *
+             * This rendered nothing at all mid-request, so the panel
+             * looked like a campaign list with no campaigns in it —
+             * which is a different thing from one that has not arrived.
+             */
             empty={
-              loading ? null : (
+              loading ? (
+                <div className="divide-y divide-foreground/[0.06]">
+                  {[0, 1, 2].map((index) => (
+                    <div key={index} className="flex items-center gap-3 p-4">
+                      <Skeleton className="h-4 w-24 rounded-md" />
+                      <div className="flex-1 space-y-1.5">
+                        <Skeleton className="h-3.5 w-40 rounded-md" />
+                        <Skeleton className="h-3 w-56 rounded-md" />
+                      </div>
+                      <Skeleton className="h-9 w-20 rounded-lg" />
+                    </div>
+                  ))}
+                </div>
+              ) : (
                 <p className="p-6 text-center text-[0.92rem] text-muted-foreground">
                   No codes yet.
                 </p>
@@ -227,51 +207,17 @@ export function CodesPanel() {
             }
           >
             {(promo) => (
-              <div
+              <CodeRow
                 key={promo.id}
-                className="flex flex-wrap items-center gap-3 border-b border-foreground/[0.06] p-4 last:border-0"
-              >
-                <code
-                  className={`font-mono text-[0.92rem] font-bold ${
-                    promo.active ? "" : "line-through opacity-50"
-                  }`}
-                >
-                  {promo.code}
-                </code>
-
-                <div className="min-w-0 flex-1">
-                  <div className="text-[0.92rem]">
-                    {rewardText(promo.reward_kind, promo.reward_value)}
-                  </div>
-                  <p className="text-[0.86rem] leading-relaxed text-muted-foreground">
-                    {promo.label}
-                    {promo.city ? ` · ${promo.city}` : ""}
-                    {promo.segment ? ` · ${AUDIENCE[promo.segment] ?? promo.segment}` : ""}
-                  </p>
-                </div>
-
-                {/* An uncapped code is an open-ended cost, and the person
-                    who made it will not be the one who notices. */}
-                {promo.max_uses === null && promo.active && (
-                  <Badge variant="secondary" className="text-[0.8rem]">
-                    no limit
-                  </Badge>
+                promo={promo}
+                rewards={(data?.promoRewards ?? []).filter(
+                  (reward) => reward.promo_id === promo.id,
                 )}
-
-                <Badge variant="outline" className="text-[0.8rem]">
-                  {promo.used}
-                  {promo.max_uses ? ` of ${promo.max_uses}` : ""} used
-                </Badge>
-
-                <Button
-                  variant={promo.active ? "ghost" : "outline"}
-                  disabled={busy}
-                  onClick={() => toggle("code", promo.id, !promo.active)}
-                  className="h-9 text-[0.86rem]"
-                >
-                  {promo.active ? "Stop" : "Start"}
-                </Button>
-              </div>
+                plans={data?.rewardPlans ?? []}
+                busy={busy}
+                onToggle={() => toggle("code", promo.id, !promo.active)}
+                onChanged={load}
+              />
             )}
           </PagedList>
         </div>
@@ -306,12 +252,16 @@ export function CodesPanel() {
             <MilestoneRow
               key={milestone.id}
               milestone={milestone}
+              rewards={(data?.rewards ?? []).filter(
+                (reward) => reward.milestone === milestone.key,
+              )}
+              plans={data?.rewardPlans ?? []}
               paid={referral?.perMilestone[milestone.key] ?? 0}
-              rewardKinds={data?.milestoneKinds ?? []}
               busy={busy}
               first={index === 0}
               onSave={save}
               onToggle={() => toggle("milestone", milestone.id, !milestone.active)}
+              onChanged={load}
             />
           ))}
         </div>
@@ -320,257 +270,13 @@ export function CodesPanel() {
       {adding && (
         <NewCodeWizard
           rewardKinds={data?.rewardKinds ?? []}
+          plans={data?.rewardPlans ?? []}
           cities={data?.cities ?? []}
           busy={busy}
           onCancel={() => setAdding(false)}
           onCreate={create}
         />
       )}
-    </div>
-  );
-}
-
-/**
- * One invite reward, editable in place.
- *
- * Read-only until you press Edit. The four rows are mostly looked at
- * rather than changed, and four rows of open input boxes reads as a
- * form somebody forgot to submit.
- *
- * Everything that decides what a reward is worth is here: the wording
- * both sides read, what is paid, how much, and who gets it.
- *
- * The step itself — "they joined", "they verified" — is not editable,
- * and that is deliberate rather than unfinished. Those four keys are
- * written into database triggers, so a renamed one stops firing and an
- * invented one never fires at all. Every knob that changes the reward
- * is open; the one that would quietly disconnect it is not.
- */
-function MilestoneRow({
-  milestone,
-  paid,
-  rewardKinds,
-  busy,
-  first,
-  onSave,
-  onToggle,
-}: {
-  milestone: Milestone;
-  paid: number;
-  rewardKinds: string[];
-  busy: boolean;
-  first: boolean;
-  onSave: (id: string, patch: Record<string, unknown>) => Promise<void>;
-  onToggle: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [label, setLabel] = useState(milestone.label);
-  const [inviteeLabel, setInviteeLabel] = useState(milestone.invitee_label ?? "");
-  const [kind, setKind] = useState(milestone.reward_kind);
-  const [value, setValue] = useState(String(milestone.reward_value));
-  const [toReferrer, setToReferrer] = useState(milestone.rewards_referrer);
-  const [toInvitee, setToInvitee] = useState(milestone.rewards_invitee);
-
-  const cancel = () => {
-    setLabel(milestone.label);
-    setInviteeLabel(milestone.invitee_label ?? "");
-    setKind(milestone.reward_kind);
-    setValue(String(milestone.reward_value));
-    setToReferrer(milestone.rewards_referrer);
-    setToInvitee(milestone.rewards_invitee);
-    setEditing(false);
-  };
-
-  const commit = async () => {
-    await onSave(milestone.id, {
-      label: label.trim(),
-      invitee_label: inviteeLabel.trim(),
-      reward_kind: kind,
-      reward_value: Number(value),
-      rewards_referrer: toReferrer,
-      rewards_invitee: toInvitee,
-    });
-    setEditing(false);
-  };
-
-  const dirty =
-    label.trim() !== milestone.label ||
-    inviteeLabel.trim() !== (milestone.invitee_label ?? "") ||
-    kind !== milestone.reward_kind ||
-    Number(value) !== milestone.reward_value ||
-    toReferrer !== milestone.rewards_referrer ||
-    toInvitee !== milestone.rewards_invitee;
-
-  // Enforced by the table too. Checked here so the message is a
-  // sentence rather than a constraint name.
-  const paysNobody = !toReferrer && !toInvitee;
-
-  if (editing) {
-    return (
-      <div className={`space-y-4 p-4 ${first ? "" : "border-t border-foreground/[0.06]"}`}>
-        <div>
-          <label htmlFor={`${milestone.id}-label`} className="block text-[0.86rem] font-medium">
-            What the inviter is told
-          </label>
-          <p className="mb-1.5 text-[0.8rem] text-muted-foreground">
-            Written from their side, like &ldquo;They joined&rdquo;.
-          </p>
-          <Input
-            id={`${milestone.id}-label`}
-            value={label}
-            onChange={(event) => setLabel(event.target.value)}
-          />
-        </div>
-
-        {/*
-          Only worth asking about when the invited person is actually
-          being paid. Otherwise it is a field for a message nobody gets.
-        */}
-        {toInvitee && (
-          <div>
-            <label
-              htmlFor={`${milestone.id}-invitee`}
-              className="block text-[0.86rem] font-medium"
-            >
-              What the new member is told
-            </label>
-            <p className="mb-1.5 text-[0.8rem] text-muted-foreground">
-              Written to them, like &ldquo;Welcome, here are some roses&rdquo;. Leave it
-              empty to reuse the line above.
-            </p>
-            <Input
-              id={`${milestone.id}-invitee`}
-              value={inviteeLabel}
-              onChange={(event) => setInviteeLabel(event.target.value)}
-              placeholder={label}
-            />
-          </div>
-        )}
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <span className="block text-[0.86rem] font-medium">What they get</span>
-            <p className="mb-1.5 text-[0.8rem] text-muted-foreground">
-              Roses, or days of Premium.
-            </p>
-            <Select
-              value={kind}
-              onChange={setKind}
-              options={rewardKinds.map((option) => ({
-                value: option,
-                label: REWARD_LABEL[option] ?? option,
-              }))}
-            />
-          </div>
-
-          <div>
-            <label htmlFor={`${milestone.id}-value`} className="block text-[0.86rem] font-medium">
-              How much
-            </label>
-            <p className="mb-1.5 text-[0.8rem] text-muted-foreground">
-              {kind === "premium_days" ? "Days of Premium." : "Number of roses."}
-            </p>
-            {/* type="number" is what turns on the panel-wide guard that
-                blocks letters, e, + and pasted junk. */}
-            <Input
-              id={`${milestone.id}-value`}
-              type="number"
-              inputMode="numeric"
-              min={1}
-              max={100000}
-              value={value}
-              onChange={(event) => setValue(event.target.value)}
-            />
-          </div>
-        </div>
-
-        {/*
-          Who is paid.
-
-          Both can be on: that is a reward which thanks the inviter and
-          welcomes the new person at the same time. Neither cannot — an
-          award that pays nobody still records itself and still sends a
-          notification promising a reward.
-        */}
-        <div>
-          <span className="block text-[0.86rem] font-medium">Who gets paid</span>
-          <p className="mb-1.5 text-[0.8rem] text-muted-foreground">Pick either, or both.</p>
-          <div className="flex flex-wrap gap-2">
-            <Toggle on={toReferrer} onClick={() => setToReferrer(!toReferrer)}>
-              The inviter
-            </Toggle>
-            <Toggle on={toInvitee} onClick={() => setToInvitee(!toInvitee)}>
-              The new member
-            </Toggle>
-          </div>
-          {paysNobody && (
-            <p className="mt-1.5 text-[0.8rem] text-destructive">
-              Pick at least one, or this reward pays nobody.
-            </p>
-          )}
-        </div>
-
-        <div className="flex gap-2">
-          <Button
-            onClick={commit}
-            disabled={busy || !dirty || paysNobody || !label.trim() || !value.trim()}
-            className="h-9 text-[0.86rem]"
-          >
-            {busy ? "Saving" : "Save"}
-          </Button>
-          <Button variant="ghost" onClick={cancel} className="h-9 text-[0.86rem]">
-            Cancel
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={`flex items-center gap-3 p-4 ${
-        first ? "" : "border-t border-foreground/[0.06]"
-      }`}
-    >
-      <div className="min-w-0 flex-1">
-        <div
-          className={`text-[0.92rem] font-medium ${
-            milestone.active ? "" : "line-through opacity-50"
-          }`}
-        >
-          {milestone.label}
-        </div>
-        <p className="text-[0.86rem] leading-relaxed text-muted-foreground">
-          Pays {rewardText(milestone.reward_kind, milestone.reward_value)} to{" "}
-          {milestone.rewards_referrer && milestone.rewards_invitee
-            ? "both of them"
-            : milestone.rewards_invitee
-              ? "the new member"
-              : "the inviter"}
-        </p>
-      </div>
-
-      <Badge variant="outline" className="text-[0.8rem]">
-        {paid} paid
-      </Badge>
-
-      <Button
-        variant="outline"
-        onClick={() => setEditing(true)}
-        className="h-9 text-[0.86rem]"
-      >
-        <Pencil className="mr-1.5 size-3.5" />
-        Edit
-      </Button>
-
-      <Button
-        variant={milestone.active ? "ghost" : "outline"}
-        disabled={busy}
-        onClick={onToggle}
-        className="h-9 text-[0.86rem]"
-      >
-        {milestone.active ? "Stop" : "Start"}
-      </Button>
     </div>
   );
 }

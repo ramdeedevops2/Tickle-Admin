@@ -2,6 +2,7 @@
 import { useCallback, useState } from "react";
 import { adminFetch } from "@/lib/adminFetch";
 import { Button } from "@/components/ui/button";
+import { SkeletonCard, SkeletonStats } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
 
@@ -137,7 +138,15 @@ export function FairnessEditor() {
     setSaving(false);
   }, [draft, load]);
 
-  if (!data) return null;
+  // Shaped like the panel underneath, so the screen does not snap.
+  if (!data) {
+    return (
+      <div className="space-y-4">
+        <SkeletonStats count={3} />
+        <SkeletonCard lines={5} />
+      </div>
+    );
+  }
 
   const { stats } = data;
 

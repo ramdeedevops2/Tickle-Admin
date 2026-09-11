@@ -2,6 +2,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { adminFetch } from "@/lib/adminFetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { SkeletonCard } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { ShieldCheck } from "lucide-react";
 import { Select } from "@/components/ui/select";
@@ -127,7 +128,11 @@ export function RolesPanel() {
   const { page, setPage } = usePagination(data?.admins.length ?? 0);
 
   if (!data) {
-    return <p className="text-[0.92rem] text-muted-foreground">{error ?? "Loading…"}</p>;
+    return error ? (
+      <p className="text-[0.92rem] text-destructive">{error}</p>
+    ) : (
+      <SkeletonCard lines={4} />
+    );
   }
 
   return (

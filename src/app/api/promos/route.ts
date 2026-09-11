@@ -12,26 +12,24 @@ import { failed, requireAdmin } from "@/lib/supabase/admin";
  * The redemption counts are shown beside every code for that reason.
  */
 
-const REWARD_KINDS = [
-  "roses",
-  "super_likes",
-  "premium_days",
-  "premium_discount",
-  "pack_bonus",
-];
+/*
+ * What a promo code can pay.
+ *
+ * Three kinds are gone as of 079 — super_likes, premium_discount and
+ * pack_bonus. redeem_promo() never had a branch for any of them, so a
+ * code set to one recorded the redemption, reported success, and
+ * credited nothing.
+ */
+const REWARD_KINDS = ["roses", "plan", "boost", "incognito"];
 
 /*
- * What an invite reward can pay, which is a shorter list.
+ * Invite rewards are not here.
  *
- * Promo codes and milestones were sharing REWARD_KINDS, and they do not
- * share crediting code. award_referral() only has branches for roses and
- * premium_days — picking anything else recorded the award and sent a
- * notification saying the reward was in their wallet, while crediting
- * nothing. 'super_likes' is not an oversight there: super likes are
- * bought with roses rather than held as a balance, so there is no
- * balance to add to.
+ * They were, as a shorter list of kinds a milestone could pay. 077 gave
+ * them their own table and their own route (/api/invites), because one
+ * step can now pay several things and each side can get something
+ * different — which a single kind on a single row cannot say.
  */
-const MILESTONE_KINDS = ["roses", "premium_days"];
 
 const SEGMENTS = ["new", "premium", "free", "lapsed"];
 
@@ -40,9 +38,27 @@ export async function GET(request: NextRequest) {
     const auth = await requireAdmin(request);
     if (auth.error) return auth.error;
 
-    const [codes, milestones, awards, redemptions, cities, caps] = await Promise.all([
+    const [codes, milestones, rewards, promoRewards, plans, awards, redemptions, cities, caps] =
+      await Promise.all([
       auth.supabase.from("promo_codes").select("*").order("created_at", { ascending: false }),
       auth.supabase.from("referral_milestones").select("*").order("sort_order"),
+
+      // What each step pays. Rows since 077, so a step can pay several
+      // things and each side can get something different.
+      auth.supabase.from("referral_rewards").select("*").order("sort_order"),
+
+      // What each promo code pays. Rows since 079 — the five-option
+      // dropdown they replaced had three kinds that credited nothing.
+      auth.supabase.from("promo_rewards").select("*").order("sort_order"),
+
+      // Plans a reward can grant. Free is never one: giving somebody
+      // what they already have is not a reward.
+      auth.supabase
+        .from("plans")
+        .select("key, label, days, active")
+        .neq("key", "free")
+        .order("sort_order"),
+
       auth.supabase.from("referral_awards").select("milestone, referrer_id").limit(50000),
       auth.supabase.from("promo_redemptions").select("promo_id").limit(50000),
       /*
@@ -83,8 +99,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       codes: codes.data ?? [],
       milestones: milestones.data ?? [],
+      rewards: rewards.data ?? [],
+      promoRewards: promoRewards.data ?? [],
+      rewardPlans: plans.data ?? [],
       rewardKinds: REWARD_KINDS,
-      milestoneKinds: MILESTONE_KINDS,
       // What the anti-farm ceiling is set to. Shown beside the rewards
       // because it is the reason a reward can look correct and still
       // not pay: past this many, awards stop silently by design.
@@ -173,8 +191,6 @@ export async function POST(request: NextRequest) {
       .insert({
         code,
         label,
-        reward_kind: kind,
-        reward_value: Math.round(value),
         city: body.city ? String(body.city).trim().toLowerCase() : null,
         segment,
         max_uses: body.max_uses == null ? null : Math.round(Number(body.max_uses)),
@@ -191,6 +207,35 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: "That code already exists." }, { status: 409 });
       }
       throw error;
+    }
+
+    /*
+     * The first reward, written as a row.
+     *
+     * A code with no rewards is refused at redemption (079), so
+     * creating one without its first reward would make a code that
+     * exists and cannot be used. More can be added afterwards.
+     */
+    const reward: Record<string, unknown> = { promo_id: data.id, kind, sort_order: 0 };
+
+    if (kind === "roses") {
+      reward.amount = Math.round(value);
+    } else if (kind === "plan") {
+      reward.plan_key = String(body.plan_key ?? "").trim();
+      reward.reward_days = Math.round(value);
+    } else {
+      reward.reward_days = Math.round(value);
+    }
+
+    const { error: rewardError } = await auth.supabase
+      .from("promo_rewards")
+      .insert(reward);
+
+    if (rewardError) {
+      // The code without its reward is unusable, so it does not survive
+      // a half-finished create.
+      await auth.supabase.from("promo_codes").delete().eq("id", data.id);
+      throw rewardError;
     }
 
     return NextResponse.json({ code: data });
@@ -216,7 +261,9 @@ export async function PATCH(request: NextRequest) {
 
     if (typeof body.active === "boolean") update.active = body.active;
 
-    if ("reward_value" in body) {
+    // Promo codes only. A milestone has no reward_value since 077 —
+    // its rewards are rows in referral_rewards.
+    if ("reward_value" in body && !isMilestone) {
       const value = Number(body.reward_value);
       if (!Number.isFinite(value) || value < 1 || value > 100000) {
         return NextResponse.json({ error: "Value is out of range." }, { status: 400 });
@@ -229,13 +276,11 @@ export async function PATCH(request: NextRequest) {
      *
      * Checked against the list rather than passed through: reward_kind
      * is read by the crediting function, and an unrecognised value
-     * there is a reward that silently never pays. Milestones get the
-     * shorter list — see MILESTONE_KINDS.
+     * there is a reward that silently never pays.
      */
-    if ("reward_kind" in body) {
+    if ("reward_kind" in body && !isMilestone) {
       const kind = String(body.reward_kind);
-      const allowed = isMilestone ? MILESTONE_KINDS : REWARD_KINDS;
-      if (!allowed.includes(kind)) {
+      if (!REWARD_KINDS.includes(kind)) {
         return NextResponse.json({ error: "Unknown reward." }, { status: 400 });
       }
       update.reward_kind = kind;
@@ -259,31 +304,18 @@ export async function PATCH(request: NextRequest) {
 
     if (isMilestone) {
       /*
-       * Who gets paid.
+       * No reward fields here any more.
        *
-       * Both can be on — that is a referral that thanks the inviter and
-       * welcomes the new person. Neither cannot: a milestone paying
-       * nobody still writes an award row and still sends a notification
-       * promising a reward, so it reads as working while doing nothing.
-       * The same check exists as a table constraint; this one is here
-       * to give a sentence back instead of a Postgres error string.
+       * A milestone used to carry its reward in its own columns —
+       * kind, amount, and two switches saying who was paid. 077 moved
+       * all of that into referral_rewards, so a step can pay several
+       * things and each side can get something different. Those
+       * columns are gone from the table, and writing them here would
+       * be an error rather than a no-op.
+       *
+       * Rewards are edited through /api/invites. What is left on a
+       * milestone is the wording and the order.
        */
-      if (typeof body.rewards_referrer === "boolean") {
-        update.rewards_referrer = body.rewards_referrer;
-      }
-      if (typeof body.rewards_invitee === "boolean") {
-        update.rewards_invitee = body.rewards_invitee;
-      }
-
-      const referrer = update.rewards_referrer ?? body.current_rewards_referrer;
-      const invitee = update.rewards_invitee ?? body.current_rewards_invitee;
-
-      if (referrer === false && invitee === false) {
-        return NextResponse.json(
-          { error: "A reward has to pay somebody — pick the inviter, the new member, or both." },
-          { status: 400 },
-        );
-      }
 
       // Shown to the invited person, who is not "they". Cleared back to
       // null rather than empty string so the payout falls back to label.
@@ -310,5 +342,45 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     return failed(error, "Failed to update.");
+  }
+}
+
+/**
+ * Removing a promo code.
+ *
+ * Deleted outright, including its redemption rows, because a code is a
+ * campaign rather than a record — nobody audits which code somebody
+ * used six months ago, and the roses it paid stay in the rose ledger
+ * under their own reason regardless.
+ *
+ * Milestones are not deletable here on purpose: their keys are written
+ * into trigger bodies, so a missing one is a reward that silently stops
+ * firing rather than an error anybody sees.
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const auth = await requireAdmin(request, "config.campaigns");
+    if (auth.error) return auth.error;
+
+    const entity = request.nextUrl.searchParams.get("entity");
+    const id = request.nextUrl.searchParams.get("id");
+
+    if (entity !== "code") {
+      return NextResponse.json(
+        { error: "Only codes can be removed here." },
+        { status: 400 },
+      );
+    }
+
+    if (!id) {
+      return NextResponse.json({ error: "Which code?" }, { status: 400 });
+    }
+
+    const { error } = await auth.supabase.from("promo_codes").delete().eq("id", id);
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    return failed(error, "Failed to remove that code.");
   }
 }

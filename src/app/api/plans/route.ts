@@ -44,12 +44,11 @@ const NUMERIC_LIMITS: Record<string, { min: number; max: number }> = {
   daily_paths_likes: { min: 0, max: 200 },
 };
 
-/** The four things a tier either unlocks or does not. */
+/** The three things a tier either unlocks or does not. */
 const GATES = [
   "sees_who_liked",
   "can_hide_presence",
   "can_incognito",
-  "can_travel",
 ] as const;
 
 /** Free text and flags that describe the tier rather than entitle it. */
@@ -303,9 +302,21 @@ export async function POST(request: NextRequest) {
     });
 
     if (error) {
+      /*
+       * Two different unique constraints reach here.
+       *
+       * The primary key is the tier name; plans_product_id_unique (074)
+       * is the store product. Saying "that name exists" when the real
+       * clash is a product id sends somebody renaming a tier that was
+       * never the problem.
+       */
       if (error.code === "23505") {
         return NextResponse.json(
-          { error: "A tier with that name already exists." },
+          {
+            error: error.message?.includes("product_id")
+              ? "Another tier already uses that store product id."
+              : "A tier with that name already exists.",
+          },
           { status: 400 },
         );
       }
@@ -355,6 +366,45 @@ export async function PATCH(request: NextRequest) {
     }
 
     /*
+     * Switching a tier on needs a price and a length first.
+     *
+     * plans_paid_needs_price enforces this, but a CHECK violation
+     * arrives as a Postgres error code that failed() cannot turn into
+     * anything a person can act on — the panel showed "Failed to update
+     * that tier", which names neither the cause nor the fix. So the
+     * same rule is stated here, where the missing field can be named.
+     *
+     * Read against the stored row rather than the patch alone: price
+     * and active can arrive in the same request, and a tier being given
+     * both at once is valid.
+     */
+    if (update.active === true && body.key !== "free") {
+      const { data: current } = await auth.supabase
+        .from("plans")
+        .select("price_minor, days")
+        .eq("key", body.key)
+        .maybeSingle();
+
+      const price =
+        "price_minor" in update ? update.price_minor : current?.price_minor;
+      const days = "days" in update ? update.days : current?.days;
+
+      const missing = [
+        price == null ? "a price" : null,
+        days == null ? "a length" : null,
+      ].filter(Boolean);
+
+      if (missing.length > 0) {
+        return NextResponse.json(
+          {
+            error: `Give this tier ${missing.join(" and ")} before switching it on. Open Edit plan to set it.`,
+          },
+          { status: 400 },
+        );
+      }
+    }
+
+    /*
      * One featured tier at a time.
      *
      * Two highlighted cards is no highlight, and the app draws the
@@ -373,7 +423,17 @@ export async function PATCH(request: NextRequest) {
       .update(update)
       .eq("key", body.key);
 
-    if (error) throw error;
+    if (error) {
+      // plans_product_id_unique (074). One store product sells one
+      // tier, so a receipt always has a single answer.
+      if (error.code === "23505" && error.message?.includes("product_id")) {
+        return NextResponse.json(
+          { error: "Another tier already uses that store product id." },
+          { status: 400 },
+        );
+      }
+      throw error;
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error) {

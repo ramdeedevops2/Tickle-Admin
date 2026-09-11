@@ -11,6 +11,7 @@ import { Select } from "@/components/ui/select";
 import { RulesEditor } from "@/components/RulesEditor";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
 import { PageHeader, Explainer } from "@/components/ui/page";
+import { SkeletonCard, SkeletonStats } from "@/components/ui/skeleton";
 import { Segmented } from "@/components/ui/select";
 import { MessageStreamPanel } from "@/components/messaging/MessageStreamPanel";
 import { BroadcastPanel } from "@/components/messaging/BroadcastPanel";
@@ -204,6 +205,17 @@ export default function MessagingPage() {
                 {error}
               </CardContent>
             </Card>
+          )}
+
+          {/* The shape of what is coming, rather than nothing.
+              The tab rendered its heading over an empty area until the
+              request landed, which reads as a screen that failed. */}
+          {!data && !error && (
+            <div className="space-y-4">
+              <SkeletonStats count={4} />
+              <SkeletonCard lines={4} />
+              <SkeletonCard lines={3} />
+            </div>
           )}
 
           {data && (
@@ -451,9 +463,12 @@ export default function MessagingPage() {
               </div>
             </CardContent>
           </Card>
-          {/* Messaging rules, which lived on /config while this page —
-          also messaging settings — sat separately. */}
-          <RulesEditor />
+          {/* Only the messaging ones now.
+              This rendered all eight groups — matches, revival, face
+              checks, the media split, invite caps, dormancy, reports —
+              because it was where the orphaned settings were parked.
+              Each has gone to the screen it belongs on. */}
+          <RulesEditor groups={["Messaging"]} />
         </>
       )}
     </div>

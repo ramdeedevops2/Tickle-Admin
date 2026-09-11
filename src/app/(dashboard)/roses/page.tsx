@@ -6,6 +6,7 @@ import { RefreshCw } from "lucide-react";
 import { adminFetch } from "@/lib/adminFetch";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
 import { Button } from "@/components/ui/button";
+import { RulesEditor } from "@/components/RulesEditor";
 import { Segmented } from "@/components/ui/select";
 import { Explainer, PageHeader, PageSkeleton } from "@/components/ui/page";
 import { RoseOverview, RoseLedger, RosePurchases, RoseSpending } from "@/components/roses/RoseFlow";
@@ -157,6 +158,10 @@ function RosesView() {
           <div className="space-y-10">
             <RosePacks {...props} />
             <RosePurchases {...props} />
+            {/* What a saved photo costs and how the money splits.
+                It is priced in roses, so it belongs with the rest of
+                what roses buy rather than on Messaging. */}
+            <RulesEditor groups={["Paid media"]} />
           </div>
         );
       case "supply":

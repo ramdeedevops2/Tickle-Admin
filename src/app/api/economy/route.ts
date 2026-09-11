@@ -34,7 +34,24 @@ export async function GET(request: NextRequest) {
     const [packs, promos, plans, offers, ledger] = await Promise.all([
       auth.supabase.from("rose_packs").select("*").order("sort_order"),
       auth.supabase.from("rose_promotions").select("*").order("created_at", { ascending: false }),
-      auth.supabase.from("premium_plans").select("*").order("sort_order"),
+      /*
+       * Tiers, not the legacy premium_plans table.
+       *
+       * An offer is pinned to a tier by plan_key, and the only keys
+       * that resolve are rows in `plans`. premium_plans survives from
+       * before 062 purely so old receipts still reference something,
+       * and its rows ("2 weeks", "3 months") are billing lengths that
+       * no longer exist as anything sellable — so offering them in a
+       * picker meant pinning an offer to a plan that cannot apply.
+       *
+       * Free is excluded: an offer that upgrades somebody to free is
+       * not an offer.
+       */
+      auth.supabase
+        .from("plans")
+        .select("key, label")
+        .neq("key", "free")
+        .order("sort_order"),
       auth.supabase.from("premium_offers").select("*").order("created_at", { ascending: false }),
       // Amount and reason only — never who, and never a balance.
       auth.supabase.from("rose_ledger").select("amount, reason").limit(50000),
@@ -86,10 +103,21 @@ export async function PATCH(request: NextRequest) {
 
     if (!id) return NextResponse.json({ error: "Missing id." }, { status: 400 });
 
+    /*
+     * No "plan" here on purpose.
+     *
+     * This used to accept entity:"plan" and write price_minor, days and
+     * product_id into premium_plans — a second place to price a tier,
+     * which is exactly the duplication 062 removed by moving price onto
+     * the tier row. Nothing in the panel called it any more, but an
+     * endpoint that silently writes prices to the table the app no
+     * longer reads is a trap rather than dead weight.
+     *
+     * Tier prices go through /api/plans, which writes `plans`.
+     */
     const table = {
       pack: "rose_packs",
       promotion: "rose_promotions",
-      plan: "premium_plans",
       offer: "premium_offers",
     }[entity];
 
@@ -117,23 +145,6 @@ export async function PATCH(request: NextRequest) {
       if (typeof body.product_id === "string") {
         // Nothing can be charged without one, so a pack with no product
         // id is a draft however it looks in the list.
-        update.product_id = body.product_id.trim() || null;
-      }
-    }
-
-    if (entity === "plan") {
-      for (const field of ["price_minor", "compare_minor", "days"]) {
-        if (!(field in body)) continue;
-
-        const value = Number(body[field]);
-        if (!Number.isFinite(value) || value < 0) {
-          return NextResponse.json({ error: `${field} is out of range.` }, { status: 400 });
-        }
-
-        update[field] = Math.round(value);
-      }
-
-      if (typeof body.product_id === "string") {
         update.product_id = body.product_id.trim() || null;
       }
     }
