@@ -39,9 +39,21 @@ const REASON_LABEL: Record<string, string> = {
   signup_bonus: "Joining bonus",
   milestone: "Milestone",
   super_like: "Super Like",
+  // Flares replace Super Likes as the paid signal. Both appear: rows
+  // written before the rename still say super_like.
+  flare: "Flare",
   refund: "Refund",
   admin_grant: "Granted by admin",
   admin_deduct: "Removed by admin",
+  match_revival: "Match revival",
+  revival_refund: "Revival refunded",
+  media_save: "Saved a photo",
+  media_sale: "Photo saved by someone",
+  heart_extend: "Heart extended",
+  heart_drop: "Heart dropped",
+  referral: "Invite reward",
+  promo: "Promo code",
+  pack_bonus: "Pack bonus",
 };
 
 function formatDateTime(value: string) {

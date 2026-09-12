@@ -39,6 +39,8 @@ type Plan = {
   daily_interactions: number | null;
   daily_comments: number;
   daily_super_likes: number;
+  daily_flares: number;
+  flare_rose_cost: number;
   daily_paths_likes: number;
   visibility_multiplier: number;
   active_chat_limit: number;
@@ -86,6 +88,8 @@ function blankDraft(free?: Plan): Draft {
     daily_interactions: free?.daily_interactions == null ? "" : String(free.daily_interactions),
     daily_comments: n(free?.daily_comments, "3"),
     daily_super_likes: n(free?.daily_super_likes, "1"),
+    daily_flares: n(free?.daily_flares, "0"),
+    flare_rose_cost: n(free?.flare_rose_cost, "5"),
     daily_paths_likes: n(free?.daily_paths_likes, "5"),
     active_chat_limit: n(free?.active_chat_limit, "5"),
     super_like_rose_cost: n(free?.super_like_rose_cost, "5"),
@@ -133,6 +137,8 @@ function draftFrom(plan: Plan): Draft {
       plan.daily_interactions == null ? "" : String(plan.daily_interactions),
     daily_comments: n(plan.daily_comments, "3"),
     daily_super_likes: n(plan.daily_super_likes, "1"),
+    daily_flares: n(plan.daily_flares, "0"),
+    flare_rose_cost: n(plan.flare_rose_cost, "5"),
     daily_paths_likes: n(plan.daily_paths_likes, "5"),
     active_chat_limit: n(plan.active_chat_limit, "5"),
     super_like_rose_cost: n(plan.super_like_rose_cost, "5"),

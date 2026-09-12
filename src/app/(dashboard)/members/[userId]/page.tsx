@@ -4,6 +4,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { PagedList } from "@/components/ui/paged-list";
 import { RoseWallet } from "@/components/RoseWallet";
+import { SendFlare } from "@/components/SendFlare";
 import { MemberActions } from "@/components/MemberActions";
 import { ViewAsUser } from "@/components/ViewAsUser";
 import { Adjustments } from "@/components/Adjustments";
@@ -456,6 +457,8 @@ export default function MemberProfilePage() {
       </div>
 
       <RoseWallet userId={userId} />
+
+      <SendFlare userId={userId} memberName={profile.name} />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="space-y-8">

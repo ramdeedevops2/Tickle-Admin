@@ -81,7 +81,16 @@ export async function adminFetch<T>(
     const response = await fetch(path, {
       ...init,
       headers: {
-        ...(init.body ? { "Content-Type": "application/json" } : {}),
+        /*
+         * A FormData body writes its own Content-Type.
+         *
+         * Multipart needs a boundary that only fetch can generate, and
+         * it only does so when the header is absent — so declaring
+         * anything here, including an empty string, breaks the upload.
+         */
+        ...(init.body && !(init.body instanceof FormData)
+          ? { "Content-Type": "application/json" }
+          : {}),
         ...init.headers,
         Authorization: `Bearer ${session.access_token}`,
       },

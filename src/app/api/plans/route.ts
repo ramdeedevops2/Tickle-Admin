@@ -40,6 +40,13 @@ const NUMERIC_LIMITS: Record<string, { min: number; max: number }> = {
   // super_like_rose_cost is a price rather than an allowance: what a
   // Super Like costs out of the wallet once the free ones are gone.
   super_like_rose_cost: { min: 0, max: 100 },
+
+  // Flares: the free daily allowance, and what one costs in Roses once
+  // that is spent. 0 free is the ordinary setting — a Flare is a Rose
+  // purchase unless a tier chooses to hand some out.
+  daily_flares: { min: 0, max: 100 },
+  flare_rose_cost: { min: 0, max: 100 },
+
   signup_roses: { min: 0, max: 1000 },
   daily_paths_likes: { min: 0, max: 200 },
 };
@@ -283,6 +290,7 @@ export async function POST(request: NextRequest) {
       .from("plans")
       .select(
         "daily_interactions, daily_comments, daily_super_likes, daily_paths_likes," +
+          " daily_flares, flare_rose_cost," +
           " active_chat_limit, super_like_rose_cost, signup_roses," +
           " visibility_multiplier, expired_history",
       )

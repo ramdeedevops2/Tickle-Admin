@@ -20,6 +20,7 @@ import {
   Coins,
   Ticket,
   Flower2,
+  FlaskConical,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -91,6 +92,14 @@ const NAV: { heading: string; items: NavItem[] }[] = [
       // looked at on its own — promo campaigns and invite rewards are
       // not something you go to the pricing page to find.
       { name: "Codes & invites", url: "/codes", icon: Ticket },
+    ],
+  },
+  {
+    heading: "Testing",
+    items: [
+      // Test profiles, kept apart from everything that touches real
+      // members. Everything it makes carries a @tickle.seed address.
+      { name: "Test profiles", url: "/seed", icon: FlaskConical },
     ],
   },
   {

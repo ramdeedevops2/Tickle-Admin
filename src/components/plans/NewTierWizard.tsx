@@ -36,6 +36,8 @@ export type Draft = {
   daily_interactions: string;
   daily_comments: string;
   daily_super_likes: string;
+  daily_flares: string;
+  flare_rose_cost: string;
   daily_paths_likes: string;
   active_chat_limit: string;
   super_like_rose_cost: string;
@@ -127,7 +129,26 @@ const STEPS: Step[] = [
       },
       { key: "daily_comments", label: "Comments a day", hint: "Counts against interactions too.", required: true },
       { key: "daily_super_likes", label: "Super Likes a day", hint: "Its own budget.", required: true },
-      { key: "daily_paths_likes", label: "Paths Crossed likes", hint: "Likes to people whose path you crossed.", required: true },
+      /*
+       * Zero is the ordinary answer here.
+       *
+       * Flares are a Rose purchase by default — the free allowance
+       * exists so a tier can hand some out, not because every tier
+       * should. A blank would read as "unlimited" like the
+       * interactions field above, so this one is required and starts
+       * at 0.
+       */
+      { key: "daily_flares", label: "Free Flares a day", hint: "0 means every Flare costs Roses.", required: true },
+      { key: "flare_rose_cost", label: "Flare costs", hint: "Roses each, once the free ones are gone.", required: true },
+      /*
+       * Paths likes share the deck's budget.
+       *
+       * paths_settings.share_deck_budget is on, so this number is
+       * ignored while that stays true — a Paths like spends an
+       * interaction like any swipe. Left here because the setting can
+       * be turned back off, at which point this governs again.
+       */
+      { key: "daily_paths_likes", label: "Paths Crossed likes", hint: "Ignored while Paths shares the swipe budget.", required: true },
       { key: "active_chat_limit", label: "Open chats", hint: "Conversations at once.", required: true },
       { key: "super_like_rose_cost", label: "Super Like costs", hint: "Roses each, once the daily ones are gone.", required: true },
       /*
@@ -308,6 +329,8 @@ export function NewTierWizard({
       daily_interactions: num(draft.daily_interactions),
       daily_comments: Number(draft.daily_comments),
       daily_super_likes: Number(draft.daily_super_likes),
+      daily_flares: Number(draft.daily_flares),
+      flare_rose_cost: Number(draft.flare_rose_cost),
       daily_paths_likes: Number(draft.daily_paths_likes),
       active_chat_limit: Number(draft.active_chat_limit),
       super_like_rose_cost: Number(draft.super_like_rose_cost),
