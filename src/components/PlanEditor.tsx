@@ -38,13 +38,11 @@ type Plan = {
 
   daily_interactions: number | null;
   daily_comments: number;
-  daily_super_likes: number;
   daily_flares: number;
   flare_rose_cost: number;
   daily_paths_likes: number;
   visibility_multiplier: number;
   active_chat_limit: number;
-  super_like_rose_cost: number;
   signup_roses: number;
   expired_history: string;
 
@@ -87,12 +85,10 @@ function blankDraft(free?: Plan): Draft {
     product_id: "",
     daily_interactions: free?.daily_interactions == null ? "" : String(free.daily_interactions),
     daily_comments: n(free?.daily_comments, "3"),
-    daily_super_likes: n(free?.daily_super_likes, "1"),
     daily_flares: n(free?.daily_flares, "0"),
     flare_rose_cost: n(free?.flare_rose_cost, "5"),
     daily_paths_likes: n(free?.daily_paths_likes, "5"),
     active_chat_limit: n(free?.active_chat_limit, "5"),
-    super_like_rose_cost: n(free?.super_like_rose_cost, "5"),
     visibility_multiplier: n(free?.visibility_multiplier, "1"),
     expired_history_days: String(historyDays(free?.expired_history ?? null)),
     sees_who_liked: false,
@@ -136,12 +132,10 @@ function draftFrom(plan: Plan): Draft {
     daily_interactions:
       plan.daily_interactions == null ? "" : String(plan.daily_interactions),
     daily_comments: n(plan.daily_comments, "3"),
-    daily_super_likes: n(plan.daily_super_likes, "1"),
     daily_flares: n(plan.daily_flares, "0"),
     flare_rose_cost: n(plan.flare_rose_cost, "5"),
     daily_paths_likes: n(plan.daily_paths_likes, "5"),
     active_chat_limit: n(plan.active_chat_limit, "5"),
-    super_like_rose_cost: n(plan.super_like_rose_cost, "5"),
     visibility_multiplier: n(plan.visibility_multiplier, "1"),
     expired_history_days: String(historyDays(plan.expired_history)),
     sees_who_liked: plan.sees_who_liked,

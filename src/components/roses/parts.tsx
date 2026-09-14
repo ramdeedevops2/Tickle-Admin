@@ -39,7 +39,7 @@ export type PlanRow = {
   key: string;
   label: string;
   signup_roses: number;
-  super_like_rose_cost: number;
+  flare_rose_cost: number;
 };
 
 export type Milestone = {

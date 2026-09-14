@@ -188,7 +188,7 @@ export function RoseSpending({ data, patch, busy }: PanelProps) {
   return (
     <div className="space-y-6">
       <Section
-        title="Super Likes"
+        title="Flares"
         hint="What one costs after the daily free ones are gone."
       >
         <SettingList>
@@ -198,12 +198,12 @@ export function RoseSpending({ data, patch, busy }: PanelProps) {
               label={plan.label || plan.key}
               control={
                 <NumberField
-                  value={plan.super_like_rose_cost}
+                  value={plan.flare_rose_cost}
                   disabled={busy}
                   suffix="roses"
                   onCommit={(value) =>
                     patch({
-                      field: "super_like_rose_cost",
+                      field: "flare_rose_cost",
                       value,
                       key: plan.key,
                     })

@@ -35,12 +35,10 @@ export type Draft = {
   product_id: string;
   daily_interactions: string;
   daily_comments: string;
-  daily_super_likes: string;
   daily_flares: string;
   flare_rose_cost: string;
   daily_paths_likes: string;
   active_chat_limit: string;
-  super_like_rose_cost: string;
   visibility_multiplier: string;
   expired_history_days: string;
   sees_who_liked: boolean;
@@ -128,7 +126,6 @@ const STEPS: Step[] = [
         unlimited: true,
       },
       { key: "daily_comments", label: "Comments a day", hint: "Counts against interactions too.", required: true },
-      { key: "daily_super_likes", label: "Super Likes a day", hint: "Its own budget.", required: true },
       /*
        * Zero is the ordinary answer here.
        *
@@ -150,7 +147,6 @@ const STEPS: Step[] = [
        */
       { key: "daily_paths_likes", label: "Paths Crossed likes", hint: "Ignored while Paths shares the swipe budget.", required: true },
       { key: "active_chat_limit", label: "Open chats", hint: "Conversations at once.", required: true },
-      { key: "super_like_rose_cost", label: "Super Like costs", hint: "Roses each, once the daily ones are gone.", required: true },
       /*
        * No "Roses on signup" here.
        *
@@ -328,12 +324,10 @@ export function NewTierWizard({
           }),
       daily_interactions: num(draft.daily_interactions),
       daily_comments: Number(draft.daily_comments),
-      daily_super_likes: Number(draft.daily_super_likes),
       daily_flares: Number(draft.daily_flares),
       flare_rose_cost: Number(draft.flare_rose_cost),
       daily_paths_likes: Number(draft.daily_paths_likes),
       active_chat_limit: Number(draft.active_chat_limit),
-      super_like_rose_cost: Number(draft.super_like_rose_cost),
       visibility_multiplier: Number(draft.visibility_multiplier),
       expired_history_days: Number(draft.expired_history_days),
       sees_who_liked: draft.sees_who_liked,

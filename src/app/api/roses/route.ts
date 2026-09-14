@@ -55,7 +55,7 @@ const FIELDS: Record<string, Target> = {
 
   // plans — per plan key, so free and premium can differ.
   signup_roses: { table: "plans", by: "key", min: 0, max: 1000 },
-  super_like_rose_cost: { table: "plans", by: "key", min: 0, max: 500 },
+  flare_rose_cost: { table: "plans", by: "key", min: 0, max: 500 },
 
 
   // rose_packs — per row.
@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
       supabase.from("profiles").select("user_id, roses").limit(50000),
       supabase.from("rose_packs").select("*").order("sort_order"),
       supabase.from("rose_promotions").select("*").order("created_at", { ascending: false }),
-      supabase.from("plans").select("key, label, signup_roses, super_like_rose_cost").order("key"),
+      supabase.from("plans").select("key, label, signup_roses, flare_rose_cost").order("key"),
       supabase.from("fairness_settings").select("*").eq("id", 1).maybeSingle(),
       supabase.from("heart_settings").select("*").eq("id", 1).maybeSingle(),
       supabase.from("referral_milestones").select("*").order("sort_order"),

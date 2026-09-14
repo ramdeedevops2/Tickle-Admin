@@ -29,7 +29,6 @@ import { failed, requireAdmin } from "@/lib/supabase/admin";
 /** Every numeric entitlement, with the range it is allowed to take. */
 const NUMERIC_LIMITS: Record<string, { min: number; max: number }> = {
   daily_comments: { min: 0, max: 500 },
-  daily_super_likes: { min: 0, max: 100 },
   visibility_multiplier: { min: 1, max: 5 },
 
   // How many conversations can be open at once. The constraint is the
@@ -37,9 +36,6 @@ const NUMERIC_LIMITS: Record<string, { min: number; max: number }> = {
   // becomes a chore — so this is a lever, not a cap to raise freely.
   active_chat_limit: { min: 1, max: 100 },
 
-  // super_like_rose_cost is a price rather than an allowance: what a
-  // Super Like costs out of the wallet once the free ones are gone.
-  super_like_rose_cost: { min: 0, max: 100 },
 
   // Flares: the free daily allowance, and what one costs in Roses once
   // that is spent. 0 free is the ordinary setting — a Flare is a Rose
@@ -289,9 +285,9 @@ export async function POST(request: NextRequest) {
     const { data: freeRow } = await auth.supabase
       .from("plans")
       .select(
-        "daily_interactions, daily_comments, daily_super_likes, daily_paths_likes," +
+        "daily_interactions, daily_comments, daily_paths_likes," +
           " daily_flares, flare_rose_cost," +
-          " active_chat_limit, super_like_rose_cost, signup_roses," +
+          " active_chat_limit, signup_roses," +
           " visibility_multiplier, expired_history",
       )
       .eq("key", "free")
