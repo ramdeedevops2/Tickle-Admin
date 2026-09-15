@@ -56,6 +56,8 @@ type Payload = {
   activePremium: number;
   lapsedPremium: number;
   membersByPlan: Record<string, number>;
+  /** How many promo or invite rewards hand out each tier. */
+  rewardsByPlan?: Record<string, number>;
 };
 
 
@@ -208,13 +210,29 @@ export function PlanEditor() {
   const remove = useCallback(
     async (plan: Plan) => {
       const members = data?.membersByPlan[plan.key] ?? 0;
+      const rewards = data?.rewardsByPlan?.[plan.key] ?? 0;
+
+      /*
+       * Two different warnings, and rewards only matter for a real
+       * delete.
+       *
+       * Retiring leaves the row in place, so a promo that hands out
+       * this tier keeps working. Deleting takes those rewards with it —
+       * which the foreign key used to refuse outright, surfacing as
+       * "Failed to remove that tier" with nothing said about why.
+       */
+      const rewardWarning =
+        rewards > 0
+          ? ` ${rewards} ${rewards === 1 ? "reward that gives" : "rewards that give"} ` +
+            `this tier will be removed from their promo codes and invite milestones.`
+          : "";
 
       const yes = await confirm({
         title: members > 0 ? `Retire ${plan.label}?` : `Delete ${plan.label}?`,
         body:
           members > 0
             ? `${members} ${members === 1 ? "person is" : "people are"} on this tier. They keep it until it runs out; nobody new can buy it.`
-            : "Nobody is on this tier, so it goes for good.",
+            : `Nobody is on this tier, so it goes for good.${rewardWarning}`,
         confirmLabel: members > 0 ? "Retire it" : "Delete it",
         tone: "danger",
       });

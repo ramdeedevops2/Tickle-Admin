@@ -212,6 +212,24 @@ export async function GET(request: NextRequest) {
       byPlan[key] = (byPlan[key] ?? 0) + 1;
     }
 
+    /*
+     * Which tiers are handed out as a reward.
+     *
+     * Deleting one of these removes the reward with it, so the confirm
+     * dialog has to be able to say so before anybody presses Delete —
+     * which means knowing it at load time, not at delete time.
+     */
+    const [promoRewards, inviteRewards] = await Promise.all([
+      auth.supabase.from("promo_rewards").select("plan_key").not("plan_key", "is", null),
+      auth.supabase.from("referral_rewards").select("plan_key").not("plan_key", "is", null),
+    ]);
+
+    const rewardsByPlan: Record<string, number> = {};
+    for (const row of [...(promoRewards.data ?? []), ...(inviteRewards.data ?? [])]) {
+      const key = (row as { plan_key: string | null }).plan_key;
+      if (key) rewardsByPlan[key] = (rewardsByPlan[key] ?? 0) + 1;
+    }
+
     return NextResponse.json({
       plans: planRes.data ?? [],
       // Active and lapsed are different numbers and mean different
@@ -219,6 +237,7 @@ export async function GET(request: NextRequest) {
       activePremium: live.length,
       lapsedPremium: subs.length - live.length,
       membersByPlan: byPlan,
+      rewardsByPlan,
     });
   } catch (error) {
     return failed(error, "Failed to load plans.");
@@ -491,10 +510,31 @@ export async function DELETE(request: NextRequest) {
       });
     }
 
+    /*
+     * Rewards that hand out this tier go with it.
+     *
+     * Counted before the delete rather than after, so the response can
+     * say what went. The confirm dialog already warned using the same
+     * numbers from GET; this is the record of what actually happened.
+     */
+    const { count: rewardCount } = await auth.supabase
+      .from("promo_rewards")
+      .select("id", { count: "exact", head: true })
+      .eq("plan_key", key);
+
+    const { count: inviteCount } = await auth.supabase
+      .from("referral_rewards")
+      .select("id", { count: "exact", head: true })
+      .eq("plan_key", key);
+
     const { error } = await auth.supabase.from("plans").delete().eq("key", key);
     if (error) throw error;
 
-    return NextResponse.json({ ok: true, retired: false });
+    return NextResponse.json({
+      ok: true,
+      retired: false,
+      removedRewards: (rewardCount ?? 0) + (inviteCount ?? 0),
+    });
   } catch (error) {
     return failed(error, "Failed to remove that tier.");
   }

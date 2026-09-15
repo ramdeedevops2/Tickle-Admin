@@ -198,7 +198,7 @@ export function AppSidebar() {
           src="/gogter.png"
           alt=""
           width={900}
-          height={449}
+          height={453}
           priority
           className="h-6 w-auto shrink-0 object-contain"
         />
