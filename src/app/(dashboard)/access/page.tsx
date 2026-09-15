@@ -332,7 +332,7 @@ function AccessView() {
                         }))
                       }
 
-                      placeholder="admin@tickle.app"
+                      placeholder="admin@gogter.app"
                       required
                     />
                   </div>

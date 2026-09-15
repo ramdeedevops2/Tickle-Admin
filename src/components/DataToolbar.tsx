@@ -123,8 +123,10 @@ export function DataToolbar({
           />
         )}
 
+        {/* Default size, not sm: everything else in this row is 32px
+            tall and a 28px button floats in the middle of it. */}
         {dirty && (
-          <Button variant="ghost" size="sm" onClick={clear}>
+          <Button variant="ghost" onClick={clear}>
             Clear
             <span className="ml-1 rounded-full bg-foreground/10 px-1.5 text-[0.8rem] font-medium">
               {active.length + (query.trim() ? 1 : 0)}
@@ -161,10 +163,18 @@ export function DataToolbar({
                     key={option.value}
                     type="button"
                     onClick={() => onFilter?.(filter.id, option.value)}
+                    /*
+                     * 0.92rem, not 1rem.
+                     *
+                     * At a 14px base these chips were 14px against an
+                     * 11px group label, so the value shouted over the
+                     * thing it belonged to. This is the same size the
+                     * panel's other small controls use.
+                     */
                     className={
                       selected
-                        ? "rounded-full bg-primary px-2.5 py-[0.2rem] text-[1rem] font-medium text-primary-foreground shadow-[0_1px_2px_rgba(26,26,24,0.16)]"
-                        :"rounded-full bg-foreground/[0.05] px-2.5 py-[0.2rem] text-[1rem] text-muted-foreground transition-colors hover:bg-foreground/[0.08] hover:text-foreground"
+                        ? "rounded-full bg-primary px-2.5 py-1 text-[0.92rem] font-medium text-primary-foreground shadow-[0_1px_2px_rgba(26,26,24,0.16)]"
+                        : "rounded-full bg-foreground/[0.05] px-2.5 py-1 text-[0.92rem] text-muted-foreground transition-colors hover:bg-foreground/[0.08] hover:text-foreground"
                     }
                   >
                     {option.label}
@@ -180,7 +190,7 @@ export function DataToolbar({
       )}
 
       {showing !== undefined && total !== undefined && showing !== total && (
-        <p className="tnum text-[1rem] text-muted-foreground">
+        <p className="tnum text-[0.86rem] text-muted-foreground">
           Showing {showing} of {total}
         </p>
       )}

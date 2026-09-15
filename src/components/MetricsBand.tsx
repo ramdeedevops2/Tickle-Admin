@@ -3,7 +3,6 @@ import { useCallback, useState } from "react";
 import Link from "next/link";
 import { adminFetch } from "@/lib/adminFetch";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
 import { useLiveTable } from "@/lib/useLiveTable";
 
@@ -35,14 +34,6 @@ type Metrics = {
   activity: { matches: number; messages: number; likes: number };
   attention: { reports: number; tickets: number; uncredited: number };
   windows: string[];
-};
-
-const RANGE_LABELS: Record<string, string> = {
-  today: "Today",
-  week: "7 days",
-  month: "30 days",
-  quarter: "90 days",
-  year: "Year",
 };
 
 const money = (minor: number | undefined) =>
@@ -82,9 +73,8 @@ function Figure({
   return href ? <Link href={href}>{inner}</Link> : inner;
 }
 
-export function MetricsBand() {
+export function MetricsBand({ range }: { range: string }) {
   const [data, setData] = useState<Metrics | null>(null);
-  const [range, setRange] = useState("week");
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -119,19 +109,6 @@ export function MetricsBand() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-1">
-        {data.windows.map((entry) => (
-          <Button
-            key={entry}
-            variant={range === entry ? "default" :"outline"}
-            size="sm"
-            onClick={() => setRange(entry)}
-          >
-            {RANGE_LABELS[entry] ?? entry}
-          </Button>
-        ))}
-      </div>
-
       {/* What somebody has to act on, first and separately from what
           they are only watching. */}
       {(attention.reports > 0 || attention.tickets > 0 || attention.uncredited > 0) && (

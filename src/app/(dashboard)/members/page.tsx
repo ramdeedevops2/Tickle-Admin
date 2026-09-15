@@ -190,9 +190,12 @@ function MembersView() {
       if (filter && !FILTERS[filter].test(member)) return false;
 
       if (q) {
+        // Joined with a space, not nothing: the fields ran together, so
+        // a name ending in "a" beside a city starting "del" matched
+        // "adel" — a hit belonging to neither field.
         const haystack = [member.name, member.email, member.city, member.user_id]
           .filter(Boolean)
-          .join("")
+          .join(" ")
           .toLowerCase();
         if (!haystack.includes(q)) return false;
       }
@@ -209,6 +212,19 @@ function MembersView() {
       const published = facets.published ??"all";
       if (published === "live" && !member.published_at) return false;
       if (published === "draft" && member.published_at) return false;
+
+      /*
+       * The same tests the URL filters use.
+       *
+       * "No photos" and "Weak profiles" existed already, but only as
+       * links from the command palette — invisible to anyone actually
+       * on this screen. They share FILTERS so the chip and the URL can
+       * never drift into meaning different things.
+       */
+      const quality = facets.quality ?? "all";
+      if (quality !== "all" && isFilterKey(quality)) {
+        if (!FILTERS[quality].test(member)) return false;
+      }
 
       return true;
     });
@@ -267,6 +283,14 @@ function MembersView() {
               { value: "draft", label: "Hidden" },
             ],
           },
+          {
+            id: "quality",
+            label: "Profile",
+            options: [
+              { value: "no-photos", label: "No photos" },
+              { value: "weak", label: "Weak" },
+            ],
+          },
         ]}
         values={facets}
         onFilter={setFacet}
@@ -283,13 +307,15 @@ function MembersView() {
         total={members.length}
       />
 
+      {/* Rounded like every other surface on the page — this was the one
+          square-cornered box on the screen. */}
       {filter && (
-        <div className="flex items-center gap-3 border border-foreground/[0.06] bg-foreground/[0.03] px-4 py-3">
+        <div className="flex items-center gap-3 rounded-xl border border-foreground/[0.06] bg-foreground/[0.03] px-4 py-3">
           <Filter className="size-4 shrink-0 text-muted-foreground" />
           <span className="text-[0.92rem]">
             <span className="font-medium">{FILTERS[filter].label}</span>
             <span className="text-muted-foreground">
-              {" —"}
+              {" — "}
               {visible.length} of {members.length} accounts
             </span>
           </span>

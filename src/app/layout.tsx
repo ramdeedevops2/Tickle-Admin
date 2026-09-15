@@ -24,8 +24,8 @@ const poppins = Poppins({
 });
 
 export const metadata: Metadata = {
-  title: "TICKLE",
-  description: "Central command center for the Tickle platform.",
+  title: "Gogter",
+  description: "Central command center for the Gogter platform.",
 };
 
 export default function RootLayout({

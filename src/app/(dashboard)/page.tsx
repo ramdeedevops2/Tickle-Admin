@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
 import { PagedList } from "@/components/ui/paged-list";
 import { adminCounts, adminTable } from "@/lib/adminFetch";
 import {
@@ -9,17 +10,25 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Activity, Heart, MessageSquare, RefreshCw, Users } from "lucide-react";
+import {
+  Activity,
+  Heart,
+  MessageSquare,
+  RefreshCw,
+  Users,
+} from "lucide-react";
 import type { EChartsOption } from "echarts";
 import { Chart, barSeries, lineSeries, useVizPalette } from "@/components/ui/chart";
 import { StatStrip } from "@/components/ui/stat-strip";
 import { Skeleton, SkeletonStats } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { MetricsBand } from "@/components/MetricsBand";
+import { PulseSections } from "@/components/PulseSections";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
 import { useLiveTable } from "@/lib/useLiveTable";
 import { useNames } from "@/lib/useNames";
 import { isOnline } from "@/lib/presence";
+import { cn } from "@/lib/utils";
 
 type ProfileRow = {
   created_at: string;
@@ -50,8 +59,49 @@ type MatchRow = {
   created_at: string;
 };
 
+/*
+ * The kinds of thing that land in the feed.
+ *
+ * Carried on the item rather than derived from the label, so filtering
+ * and routing both read the same field — a label is prose and will be
+ * reworded one day.
+ */
+type FeedKind = "match" | "like" | "pass" | "message" | "daily";
+
+const FEED_KINDS: { value: FeedKind; label: string }[] = [
+  { value: "match", label: "Matches" },
+  { value: "like", label: "Likes" },
+  { value: "pass", label: "Passes" },
+  { value: "message", label: "Messages" },
+  // "Daily" is the app's own word for a post that lasts a day, but the
+  // panel is read by people who never see that screen — so the chip
+  // says what it is rather than what it is called.
+  { value: "daily", label: "Posts" },
+];
+
+/*
+ * One range for the whole screen.
+ *
+ * The page used to hold three different ideas of "when": the metrics
+ * band had its own chips, the charts were hardcoded to fourteen days,
+ * and the feed had a separate window. Pressing a chip changed one of
+ * the three, which read as the control being broken rather than as it
+ * governing only part of the page.
+ *
+ * These keys match the metrics API's own windows, so one value drives
+ * the band's request and every client-side cut below it.
+ */
+const RANGES: { value: string; label: string; days: number }[] = [
+  { value: "today", label: "Today", days: 1 },
+  { value: "week", label: "7 days", days: 7 },
+  { value: "month", label: "30 days", days: 30 },
+  { value: "quarter", label: "90 days", days: 90 },
+  { value: "year", label: "Year", days: 365 },
+];
+
 type FeedItem = {
   id: string;
+  kind: FeedKind;
   label: string;
   /** Who it happened to. Named at render time, once their profile is in. */
   people: string[];
@@ -122,6 +172,23 @@ export default function PulseDashboard() {
   const [feed, setFeed] = useState<FeedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  /*
+   * What the feed is narrowed to.
+   *
+   * Nothing is remembered between visits on purpose: a filter that
+   * survives a reload hides events, and the next person to open Pulse
+   * reads the quiet as "nothing happened" rather than "you left a
+   * filter on".
+   */
+  const [kinds, setKinds] = useState<Set<FeedKind>>(new Set());
+  const [range, setRange] = useState("week");
+
+  const days = RANGES.find((entry) => entry.value === range)?.days ?? 7;
+  const since = useMemo(
+    () => Date.now() - days * 86_400_000,
+    [days],
+  );
 
   // The feed is people doing things to each other, so it needs names.
   const { resolve: resolveNames, nameOf } = useNames();
@@ -218,6 +285,7 @@ export default function PulseDashboard() {
       (recentMessagesResult.data ?? []) as RecentMessageRow[]
     ).map((message) => ({
       id: `message-${message.id}`,
+      kind: "message" as FeedKind,
       label: "Message",
       people: [message.sender_id],
       created_at: message.created_at,
@@ -226,6 +294,7 @@ export default function PulseDashboard() {
       (recentMatchesResult.data ?? []) as RecentMatchRow[]
     ).map((match) => ({
       id: `match-${match.id}`,
+      kind: "match" as FeedKind,
       label: "Match",
       people: [match.user1_id, match.user2_id],
       join: "and",
@@ -234,6 +303,7 @@ export default function PulseDashboard() {
     const recentLikes = ((recentLikesResult.data ?? []) as RecentLikeRow[]).map(
       (like) => ({
         id: `like-${like.id}`,
+        kind: "like" as FeedKind,
         label: "Like",
         people: [like.liker_id, like.liked_id],
         join: "liked",
@@ -244,6 +314,7 @@ export default function PulseDashboard() {
       (recentPassesResult.data ?? []) as RecentPassRow[]
     ).map((pass) => ({
       id: `pass-${pass.id}`,
+      kind: "pass" as FeedKind,
       label: "Pass",
       people: [pass.passer_id, pass.passed_id],
       join: "passed on",
@@ -253,7 +324,8 @@ export default function PulseDashboard() {
       (recentStoriesResult.data ?? []) as RecentStoryRow[]
     ).map((story) => ({
       id: `story-${story.id}`,
-      label: "Daily",
+      kind: "daily" as FeedKind,
+      label: "Posted",
       people: [story.user_id],
       created_at: story.created_at,
     }));
@@ -301,6 +373,76 @@ export default function PulseDashboard() {
    */
   useLiveTable(["profiles", "matches", "likes", "passes", "dailies"], loadPulse);
 
+  /*
+   * The feed, narrowed.
+   *
+   * Three independent filters, all AND-ed: an empty set of kinds means
+   * every kind rather than none, which is what "All" reads as.
+   *
+   * The name search runs against resolved names, so somebody still
+   * loading matches nothing for a moment rather than being wrongly
+   * excluded forever — the list re-derives when their name lands.
+   */
+  const shown = useMemo(() => {
+    const floor = since;
+
+    return feed.filter((item) => {
+      if (kinds.size > 0 && !kinds.has(item.kind)) return false;
+
+      if (floor !== null) {
+        const at = new Date(item.created_at).getTime();
+        if (Number.isNaN(at) || at < floor) return false;
+      }
+
+      return true;
+    });
+  }, [feed, kinds, since]);
+
+  const filtered = kinds.size > 0;
+
+  const clearFilters = useCallback(() => {
+    setKinds(new Set());
+  }, []);
+
+  const toggleKind = useCallback((kind: FeedKind) => {
+    setKinds((current) => {
+      const next = new Set(current);
+      if (next.has(kind)) next.delete(kind);
+      else next.add(kind);
+      return next;
+    });
+  }, []);
+
+  /*
+   * Where a row points.
+   *
+   * Only two screens can actually receive a deep link today: a member's
+   * own page, and the list screens by tab. So a row goes to the person
+   * it is most about — the one who *received* the act, since that is
+   * the account an admin is usually checking on — and Matches and
+   * Messages go to the screen that owns conversations.
+   *
+   * Returning null rather than guessing is deliberate: a row that
+   * silently lands somewhere unrelated is worse than one that does not
+   * move.
+   */
+  const rowHref = useCallback((item: FeedItem): string | null => {
+    switch (item.kind) {
+      case "match":
+        return "/connections?tab=matches";
+      case "message":
+        return "/messaging?tab=stream";
+      case "like":
+      case "pass":
+        // The person on the receiving end.
+        return item.people[1] ? `/members/${item.people[1]}` : null;
+      case "daily":
+        return item.people[0] ? `/members/${item.people[0]}` : null;
+      default:
+        return null;
+    }
+  }, []);
+
   const stats = useMemo(() => {
     const today = startOfDay(new Date());
     const activeToday = profiles.filter((profile) =>
@@ -342,18 +484,30 @@ export default function PulseDashboard() {
    * it becomes churn.
    */
   const activityOption = useMemo(() => {
-    const days = Array.from({ length: 14 }, (_, index) => {
+    /*
+     * One point per day, capped at thirty.
+     *
+     * A year as 365 daily points is unreadable and slow to draw, so
+     * longer ranges are sampled rather than shown whole — the shape is
+     * the thing being read here, not any single day.
+     */
+    const points = Math.min(days, 30);
+    const step = Math.max(1, Math.round(days / points));
+
+    const buckets = Array.from({ length: points }, (_, index) => {
       const date = startOfDay(new Date());
-      date.setDate(date.getDate() - (13 - index));
+      date.setDate(date.getDate() - (points - 1 - index) * step);
       return date;
     });
 
+    const span = step * 86_400_000;
+
     const perDay = (rows: { created_at: string }[]) =>
-      days.map(
+      buckets.map(
         (day) =>
           rows.filter((row) => {
             const at = new Date(row.created_at);
-            return at >= day && at < new Date(day.getTime() + 86_400_000);
+            return at >= day && at < new Date(day.getTime() + span);
           }).length,
       );
 
@@ -364,7 +518,7 @@ export default function PulseDashboard() {
       // have no legend at all.
       grid: { top: 34 },
       xAxis: {
-        data: days.map((day) =>
+        data: buckets.map((day) =>
           day.toLocaleDateString("en-US", { day: "numeric", month: "short" }),
         ),
       },
@@ -373,7 +527,7 @@ export default function PulseDashboard() {
         lineSeries("Matches", perDay(matches), palette[1]),
       ],
     } as EChartsOption;
-  }, [profiles, matches, palette]);
+  }, [profiles, matches, palette, days]);
 
   /*
    * How far people get through signing up.
@@ -383,11 +537,25 @@ export default function PulseDashboard() {
    * seen" is where a signup flow leaks, and four numbers side by side
    * hide exactly that.
    */
+  /*
+   * The profiles the range covers.
+   *
+   * The charts below describe who signed up, so scoping them to the
+   * range is what makes the chips move them. Anything counting a
+   * *current* state rather than an arrival — how many are published
+   * right now — stays whole, because "published in the last 7 days" is
+   * a different and less useful question.
+   */
+  const inRange = useMemo(
+    () => profiles.filter((row) => new Date(row.created_at).getTime() >= since),
+    [profiles, since],
+  );
+
   const funnelOption = useMemo(() => {
-    const joined = profiles.length;
-    const withPhotos = profiles.filter((row) => (row.photos?.length ?? 0) > 0).length;
-    const published = profiles.filter((row) => row.published_at).length;
-    const verified = profiles.filter((row) => row.face_verified_at).length;
+    const joined = inRange.length;
+    const withPhotos = inRange.filter((row) => (row.photos?.length ?? 0) > 0).length;
+    const published = inRange.filter((row) => row.published_at).length;
+    const verified = inRange.filter((row) => row.face_verified_at).length;
 
     return {
       xAxis: { data: ["Joined", "Added a photo", "Went live", "Verified"] },
@@ -395,7 +563,7 @@ export default function PulseDashboard() {
         barSeries("People", [joined, withPhotos, published, verified], palette[0]),
       ],
     } as EChartsOption;
-  }, [profiles, palette]);
+  }, [inRange, palette]);
 
   /*
    * Who is here, and where.
@@ -407,7 +575,7 @@ export default function PulseDashboard() {
   const genderOption = useMemo(() => {
     const tally: Record<string, number> = {};
 
-    for (const row of profiles) {
+    for (const row of inRange) {
       const key = row.gender ?? "Not set";
       tally[key] = (tally[key] ?? 0) + 1;
     }
@@ -436,12 +604,12 @@ export default function PulseDashboard() {
        */
       legend: { show: true, top: undefined, bottom: 0, left: "center" },
     } as EChartsOption;
-  }, [profiles]);
+  }, [inRange]);
 
   const cityOption = useMemo(() => {
     const tally: Record<string, number> = {};
 
-    for (const row of profiles) {
+    for (const row of inRange) {
       const key = (row.city ?? "").trim();
       if (key) tally[key] = (tally[key] ?? 0) + 1;
     }
@@ -478,7 +646,7 @@ export default function PulseDashboard() {
         },
       ],
     } as EChartsOption;
-  }, [profiles, palette]);
+  }, [inRange, palette]);
 
   /*
    * Ages, in five-year bands.
@@ -491,7 +659,7 @@ export default function PulseDashboard() {
     const bands = ["18-24", "25-29", "30-34", "35-39", "40-49", "50+"];
     const counts = new Array(bands.length).fill(0);
 
-    for (const row of profiles) {
+    for (const row of inRange) {
       const age = row.age;
       if (!age) continue;
 
@@ -505,27 +673,28 @@ export default function PulseDashboard() {
       xAxis: { data: bands },
       series: [barSeries("Members", counts, palette[3])],
     } as EChartsOption;
-  }, [profiles, palette]);
+  }, [inRange, palette]);
 
-  /* The sparkline under each stat: signups per day, same seven days. */
+  /* The sparkline under each stat: signups per bucket, across the range. */
   const spark = useMemo(() => {
-    const days = Array.from({ length: 14 }, (_, index) => {
+    const points = Math.min(days, 30);
+    const step = Math.max(1, Math.round(days / points));
+    const span = step * 86_400_000;
+
+    const buckets = Array.from({ length: points }, (_, index) => {
       const date = startOfDay(new Date());
-      date.setDate(date.getDate() - (13 - index));
+      date.setDate(date.getDate() - (points - 1 - index) * step);
       return date;
     });
 
-    return days.map(
+    return buckets.map(
       (day) =>
         profiles.filter((profile) => {
           const created = new Date(profile.created_at);
-          return (
-            created >= day &&
-            created < new Date(day.getTime() + 24 * 60 * 60 * 1000)
-          );
+          return created >= day && created < new Date(day.getTime() + span);
         }).length,
     );
-  }, [profiles]);
+  }, [profiles, days]);
 
   return (
     <div className="space-y-4">
@@ -545,6 +714,79 @@ export default function PulseDashboard() {
           <RefreshCw className={loading ? "animate-spin" : undefined} />
           Refresh
         </Button>
+      </div>
+
+      {/*
+        The filters, on their own line under the title row.
+
+        They govern the activity feed further down, but they are controls
+        for the page rather than part of any one card — buried in a card
+        header they were only findable by scrolling to the thing they had
+        already narrowed. A row of their own keeps the title row to one
+        idea and gives the chips room to sit on a single line.
+      */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {/* An empty set is every kind, so "All" is the state of having
+              chosen nothing rather than a sixth option. */}
+          <button
+            onClick={() => setKinds(new Set())}
+            className={cn(
+              "rounded-full px-2.5 py-1 text-[0.8rem] transition-colors",
+              kinds.size === 0
+                ? "bg-foreground text-background"
+                : "bg-foreground/[0.06] text-muted-foreground hover:bg-foreground/[0.1]",
+            )}
+          >
+            All
+          </button>
+
+          {FEED_KINDS.map((entry) => (
+            <button
+              key={entry.value}
+              onClick={() => toggleKind(entry.value)}
+              className={cn(
+                "rounded-full px-2.5 py-1 text-[0.8rem] transition-colors",
+                kinds.has(entry.value)
+                  ? "bg-foreground text-background"
+                  : "bg-foreground/[0.06] text-muted-foreground hover:bg-foreground/[0.1]",
+              )}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+
+        {/* The page's range, pushed to the right edge. Everything on
+            the screen below reads it — the metrics band, the charts and
+            the feed — so one press moves the whole page. */}
+        <div className="ml-auto flex items-center gap-1">
+          {RANGES.map((entry) => (
+            <button
+              key={entry.value}
+              onClick={() => setRange(entry.value)}
+              className={cn(
+                "rounded-lg px-2 py-1 text-[0.8rem] transition-colors",
+                range === entry.value
+                  ? "bg-foreground/[0.1] text-foreground"
+                  : "text-muted-foreground hover:bg-foreground/[0.06]",
+              )}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Only once something is on, so the row is not a permanent
+            invitation to undo nothing. */}
+        {filtered && (
+          <button
+            onClick={clearFilters}
+            className="text-[0.8rem] text-muted-foreground underline-offset-2 hover:underline"
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {error && (
@@ -605,7 +847,17 @@ export default function PulseDashboard() {
         <Card>
           <CardHeader>
             <CardTitle>Recent activity</CardTitle>
+
+            {/* The count is the feedback that a filter did something —
+                without it a short list looks like a quiet day. The
+                controls themselves are in the page header. */}
+            {filtered && !loading && (
+              <CardDescription>
+                {shown.length} of {feed.length} events
+              </CardDescription>
+            )}
           </CardHeader>
+
           <CardContent>
             {loading ? (
               <div className="space-y-2.5">
@@ -617,46 +869,77 @@ export default function PulseDashboard() {
                   </div>
                 ))}
               </div>
-            ) : feed.length === 0 ? (
+            ) : shown.length === 0 ? (
               <p className="py-10 text-center text-[0.92rem] text-muted-foreground">
-                No recent activity.
+                {filtered ? "Nothing matches those filters." : "No recent activity."}
               </p>
             ) : (
               <div className="-mx-1.5 space-y-0.5">
                 <PagedList
-                  items={feed}
+                  items={shown}
                   perPage={20}
                   className="divide-y divide-foreground/[0.06]"
                 >
-                  {(item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-foreground/[0.03]"
-                    >
-                      <span className="size-1.5 shrink-0 rounded-full bg-foreground/25" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-[0.92rem] leading-tight font-medium">
-                          {item.label}
-                        </p>
-                        <p className="truncate text-[1rem] text-muted-foreground">
-                          {nameOf(item.people[0])}
-                          {item.people[1] && (
-                            <>
-                              <span className="px-1">{item.join ?? "and"}</span>
-                              {nameOf(item.people[1])}
-                            </>
+                  {(item) => {
+                    const href = rowHref(item);
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="group flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-foreground/[0.03]"
+                      >
+                        <span className="size-1.5 shrink-0 rounded-full bg-foreground/25" />
+
+                        <div className="min-w-0 flex-1">
+                          {/*
+                            The label carries the row's own link, and the
+                            names carry their own. Nesting a link inside a
+                            link is invalid HTML and the browser picks a
+                            winner for you, so they sit side by side.
+                          */}
+                          {href ? (
+                            <Link
+                              href={href}
+                              className="block truncate text-[0.92rem] leading-tight font-medium underline-offset-2 group-hover:underline"
+                            >
+                              {item.label}
+                            </Link>
+                          ) : (
+                            <p className="truncate text-[0.92rem] leading-tight font-medium">
+                              {item.label}
+                            </p>
                           )}
-                        </p>
+
+                          <p className="truncate text-[1rem] text-muted-foreground">
+                            <Link
+                              href={`/members/${item.people[0]}`}
+                              className="underline-offset-2 hover:text-foreground hover:underline"
+                            >
+                              {nameOf(item.people[0])}
+                            </Link>
+                            {item.people[1] && (
+                              <>
+                                <span className="px-1">{item.join ?? "and"}</span>
+                                <Link
+                                  href={`/members/${item.people[1]}`}
+                                  className="underline-offset-2 hover:text-foreground hover:underline"
+                                >
+                                  {nameOf(item.people[1])}
+                                </Link>
+                              </>
+                            )}
+                          </p>
+                        </div>
+
+                        <span className="tnum shrink-0 text-[0.8rem] text-muted-foreground">
+                          {formatDateTime(item.created_at)}
+                        </span>
                       </div>
-                      <span className="tnum shrink-0 text-[0.8rem] text-muted-foreground">
-                        {formatDateTime(item.created_at)}
-                      </span>
-                    </div>
-                  )}
+                    );
+                  }}
                 </PagedList>
               </div>
-            )}
-          </CardContent>
+            )}          </CardContent>
         </Card>
       </div>
 
@@ -722,7 +1005,13 @@ export default function PulseDashboard() {
         </Card>
       </div>
 
-      <MetricsBand />
+      <MetricsBand range={range} />
+
+      {/* The rest of the panel: Roses, Hearts, Moderation, Content.
+          Below the charts because those answer the first question a
+          dashboard is opened with — is the app growing — and these
+          answer the second: is everything else healthy. */}
+      <PulseSections range={range} />
     </div>
   );
 }

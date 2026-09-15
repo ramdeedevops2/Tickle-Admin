@@ -20,7 +20,15 @@ import { cn } from "@/lib/utils";
  * once already.
  */
 
-export type ComboboxOption = { value: string; label: string; hint?: string };
+export type ComboboxOption = {
+  value: string;
+  label: string;
+  hint?: string;
+  /** Drawn at the left of the row — a face makes same-named people distinguishable. */
+  image?: string | null;
+  /** Shown as a quiet tag on the right. */
+  tag?: string;
+};
 
 export function Combobox({
   value,
@@ -30,6 +38,10 @@ export function Combobox({
   emptyLabel = "Nothing matches",
   className,
   disabled,
+  onSearch,
+  loading = false,
+  searchingLabel = "Searching…",
+  minChars = 2,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -38,6 +50,19 @@ export function Combobox({
   emptyLabel?: string;
   className?: string;
   disabled?: boolean;
+  /*
+   * Hand the typing to the caller instead of filtering here.
+   *
+   * The built-in filter assumes every option is already loaded, which is
+   * right for eight hundred venues and impossible for every member. When
+   * this is given, `options` is whatever the last search returned and no
+   * local filtering happens — the server has already decided.
+   */
+  onSearch?: (query: string) => void;
+  loading?: boolean;
+  searchingLabel?: string;
+  /** Below this, the caller is not asked and the menu says so. */
+  minChars?: number;
 }) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -50,6 +75,9 @@ export function Combobox({
   const selected = options.find((option) => option.value === value) ?? null;
 
   const visible = React.useMemo(() => {
+    // Searching remotely: options are already the answer to this query.
+    if (onSearch) return options;
+
     const q = query.trim().toLowerCase();
     if (!q) return options;
 
@@ -58,7 +86,22 @@ export function Combobox({
         option.label.toLowerCase().includes(q) ||
         (option.hint ?? "").toLowerCase().includes(q),
     );
-  }, [options, query]);
+  }, [options, query, onSearch]);
+
+  /*
+   * Ask the caller, once the typing settles.
+   *
+   * Every keystroke firing a request would put six in flight for a
+   * six-letter name and let an early one land last. 220ms is long
+   * enough to be one request per word and short enough to feel live.
+   */
+  React.useEffect(() => {
+    if (!onSearch) return;
+
+    const q = query.trim();
+    const timer = setTimeout(() => onSearch(q), 220);
+    return () => clearTimeout(timer);
+  }, [query, onSearch]);
 
   const place = React.useCallback(() => {
     const node = anchor.current;
@@ -180,7 +223,15 @@ export function Combobox({
                   : undefined,
             }}
           >
-            {visible.length === 0 ? (
+            {loading ? (
+              <p className="px-3 py-6 text-center text-[0.86rem] text-muted-foreground">
+                {searchingLabel}
+              </p>
+            ) : onSearch && query.trim().length < minChars ? (
+              <p className="px-3 py-6 text-center text-[0.86rem] text-muted-foreground">
+                Type {minChars} letters to search
+              </p>
+            ) : visible.length === 0 ? (
               <p className="px-3 py-6 text-center text-[0.86rem] text-muted-foreground">
                 {emptyLabel}
               </p>
@@ -191,10 +242,19 @@ export function Combobox({
                   onMouseEnter={() => setActive(index)}
                   onClick={() => choose(option)}
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[0.92rem]",
+                    "flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[0.92rem]",
                     index === active && "bg-accent",
                   )}
                 >
+                  {option.image !== undefined && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={option.image ?? undefined}
+                      alt=""
+                      className="size-7 shrink-0 rounded-full bg-foreground/[0.06] object-cover"
+                    />
+                  )}
+
                   <span className="min-w-0 flex-1 truncate">
                     {option.label}
                     {option.hint && (
@@ -203,6 +263,12 @@ export function Combobox({
                       </span>
                     )}
                   </span>
+
+                  {option.tag && (
+                    <span className="shrink-0 rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[0.72rem] text-muted-foreground">
+                      {option.tag}
+                    </span>
+                  )}
 
                   {option.value === value && <Check className="size-4 shrink-0" />}
                 </button>

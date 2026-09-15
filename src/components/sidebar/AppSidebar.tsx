@@ -195,14 +195,14 @@ export function AppSidebar() {
        */}
       <Link href="/" className="flex items-center gap-2.5 px-2.5 py-1">
         <Image
-          src="/tickle.png"
+          src="/gogter.png"
           alt=""
-          width={72}
-          height={72}
+          width={900}
+          height={449}
           priority
-          className="size-6 shrink-0 object-contain"
+          className="h-6 w-auto shrink-0 object-contain"
         />
-        <span className="text-[1rem] font-semibold tracking-tight">TICKLE</span>
+        <span className="text-[1rem] font-semibold tracking-tight">Gogter</span>
       </Link>
 
       <nav className="mt-3 flex min-h-0 flex-1 flex-col gap-0.5">

@@ -249,7 +249,7 @@ export function TicketsPanel() {
                         </Badge>
                       )}
                       <span>
-                        {message.from_admin ? "Tickle" :"Member"}
+                        {message.from_admin ? "Gogter" :"Member"}
                       </span>
                       <span>{new Date(message.created_at).toLocaleString()}</span>
                     </div>

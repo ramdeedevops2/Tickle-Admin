@@ -123,10 +123,10 @@ export default function LoginPage() {
           className="absolute top-1/4 opacity-[0.02] pointer-events-none select-none whitespace-nowrap"
         >
           <span className="text-[24rem] font-black tracking-tighter leading-none pr-40">
-            TICKLE
+            Gogter
           </span>
           <span className="text-[24rem] font-black tracking-tighter leading-none pr-40">
-            TICKLE
+            Gogter
           </span>
         </motion.div>
       </div>
@@ -140,7 +140,7 @@ export default function LoginPage() {
           className="lg:hidden flex items-center gap-6 mb-16"
         >
           <span className="text-[1.5rem] font-semibold tracking-tight">
-            TICKLE
+            Gogter
           </span>
         </motion.div>
 
