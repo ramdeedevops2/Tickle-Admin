@@ -3,7 +3,8 @@
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useMyAccess } from "@/lib/useMyAccess";
 import {
   Activity,
   Users,
@@ -48,6 +49,14 @@ type NavItem = {
   name: string;
   url: string;
   icon: React.ComponentType<{ className?: string }>;
+  /**
+   * The permission that opens this screen.
+   *
+   * Named on the item rather than derived from the url, so renaming a
+   * route cannot silently unlock a page — the link and the grant move
+   * together or neither does.
+   */
+  permission: string;
 };
 
 /**
@@ -61,17 +70,22 @@ const NAV: { heading: string; items: NavItem[] }[] = [
   {
     heading: "Live",
     items: [
-      { name: "Pulse", url: "/", icon: Activity },
-      { name: "Members", url: "/members", icon: Users },
-      { name: "Connections", url: "/connections", icon: Heart },
+      { name: "Pulse", url: "/", icon: Activity, permission: "page.pulse" },
+      { name: "Members", url: "/members", icon: Users, permission: "page.members" },
+      {
+        name: "Connections",
+        url: "/connections",
+        icon: Heart,
+        permission: "page.connections",
+      },
     ],
   },
   {
     heading: "Places",
     items: [
-      { name: "Hearts", url: "/hearts", icon: Sparkles },
-      { name: "Places", url: "/places", icon: Store },
-      { name: "Location", url: "/geo", icon: MapPin },
+      { name: "Hearts", url: "/hearts", icon: Sparkles, permission: "page.hearts" },
+      { name: "Places", url: "/places", icon: Store, permission: "page.places" },
+      { name: "Location", url: "/geo", icon: MapPin, permission: "page.geo" },
     ],
   },
   {
@@ -79,19 +93,29 @@ const NAV: { heading: string; items: NavItem[] }[] = [
     items: [
       // Reports, the queue, patterns, tickets, verification and the
       // day's posts: one job, one screen.
-      { name: "Moderation", url: "/safety", icon: ShieldAlert },
+      {
+        name: "Moderation",
+        url: "/safety",
+        icon: ShieldAlert,
+        permission: "page.safety",
+      },
     ],
   },
   {
     heading: "Money",
     items: [
       // Roses first: it is the currency everything else is priced in.
-      { name: "Roses", url: "/roses", icon: Flower2 },
-      { name: "Plans & money", url: "/plans", icon: Coins },
+      { name: "Roses", url: "/roses", icon: Flower2, permission: "page.roses" },
+      { name: "Plans & money", url: "/plans", icon: Coins, permission: "page.plans" },
       // Codes had a tab inside Plans, which buried a screen that is
       // looked at on its own — promo campaigns and invite rewards are
       // not something you go to the pricing page to find.
-      { name: "Codes & invites", url: "/codes", icon: Ticket },
+      {
+        name: "Codes & invites",
+        url: "/codes",
+        icon: Ticket,
+        permission: "page.codes",
+      },
     ],
   },
   {
@@ -99,17 +123,32 @@ const NAV: { heading: string; items: NavItem[] }[] = [
     items: [
       // Test profiles, kept apart from everything that touches real
       // members. Everything it makes carries a @tickle.seed address.
-      { name: "Test profiles", url: "/seed", icon: FlaskConical },
+      {
+        name: "Test profiles",
+        url: "/seed",
+        icon: FlaskConical,
+        permission: "page.seed",
+      },
     ],
   },
   {
     heading: "Rules",
     items: [
-      { name: "Matching", url: "/compatibility", icon: Puzzle },
+      {
+        name: "Matching",
+        url: "/compatibility",
+        icon: Puzzle,
+        permission: "page.compatibility",
+      },
       // Questions, the job list and the filters over them are one subject.
-      { name: "Profile", url: "/fields", icon: ListChecks },
-      { name: "Messaging", url: "/messaging", icon: MessageSquare },
-      { name: "Access", url: "/access", icon: KeyRound },
+      { name: "Profile", url: "/fields", icon: ListChecks, permission: "page.fields" },
+      {
+        name: "Messaging",
+        url: "/messaging",
+        icon: MessageSquare,
+        permission: "page.messaging",
+      },
+      { name: "Access", url: "/access", icon: KeyRound, permission: "page.access" },
     ],
   },
 ];
@@ -139,6 +178,31 @@ function NavLink({ item, current }: { item: NavItem; current: boolean }) {
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const { can, ready } = useMyAccess();
+
+  /*
+   * Only the screens this person can open.
+   *
+   * Groups that empty out are dropped whole, so a role with no money
+   * screens does not leave a divider with nothing under it.
+   *
+   * Until the answer arrives the full list is shown rather than an
+   * empty one: a sidebar that starts blank and fills in reads as broken,
+   * while one that starts full and settles reads as loading. Clicking
+   * through to a screen they cannot open is refused by the server
+   * anyway, which is the check that actually matters.
+   */
+  const visibleNav = useMemo(() => {
+    if (!ready) return NAV;
+
+    return NAV.map((group) => ({
+      ...group,
+      items: group.items.filter((item) => can(item.permission)),
+    })).filter((group) => group.items.length > 0);
+    // `can` is rebuilt every render; the permission list it closes over
+    // is what actually changes, so that is what this depends on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
   const router = useRouter();
   const supabase = createClient();
   const [user, setUser] = useState<{ name: string; role: string } | null>(null);
@@ -206,7 +270,7 @@ export function AppSidebar() {
       </Link>
 
       <nav className="mt-3 flex min-h-0 flex-1 flex-col gap-0.5">
-        {NAV.map((group) => (
+        {visibleNav.map((group) => (
           /*
            * No group heading. Naming five clusters costs five rows of
            * text for categories nobody navigates by — people look for

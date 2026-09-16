@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +18,37 @@ export default function LoginPage() {
 
   const router = useRouter();
   const supabase = createClient();
+
+  /*
+   * Say why the door was shut.
+   *
+   * AuthGuard signs people out and redirects here with ?error=..., and
+   * nothing read it — so being turned away looked identical to arriving
+   * at the login page normally, and the one question worth answering
+   * ("why can I not get in?") went unanswered.
+   */
+  useEffect(() => {
+    /*
+     * Read from window, not useSearchParams.
+     *
+     * useSearchParams opts the page out of static prerendering unless
+     * it sits inside a Suspense boundary, and the build fails outright
+     * rather than warning. This runs in an effect, so the URL is always
+     * available and nothing about rendering changes.
+     */
+    const reason = new URLSearchParams(window.location.search).get("error");
+    if (!reason) return;
+
+    setError(
+      reason === "no-role"
+        ? "Your account has no role yet. Ask a super admin to give you one."
+        : reason === "unauthorized"
+          ? "That account is not an admin."
+          : reason === "no-admin-row"
+            ? "That account has no admin access."
+            : reason,
+    );
+  }, []);
 
   const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();

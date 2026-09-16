@@ -105,7 +105,7 @@ const BLURB: Record<Tab, string> = {
   people:
     "Everybody who can sign into this panel. Adding somebody emails them an invitation; removing somebody takes their access away at once and leaves their member account alone.",
   roles:
-    "What each role is allowed to do. Change a role and it changes for everybody who holds it.",
+    "Which screens each role can open, and what they can change once inside. Edit a role and it changes for everybody who holds it.",
 };
 
 function AccessView() {
@@ -446,23 +446,27 @@ function AccessView() {
                           <TableCell>
                             <div className="flex flex-wrap items-center gap-1.5">
                               {/*
-                                A missing role_key is not "no access" —
-                                it is an older row that predates roles
-                                and still holds full admin. Saying
-                                "everything" is the honest reading.
+                                Red is reserved for the row that needs
+                                attention. A super admin is a deliberate
+                                state and gets the emphatic-but-normal
+                                badge; a missing role means the person
+                                cannot do anything until somebody picks
+                                one, which is worth chasing.
                               */}
                               <Badge
                                 variant={
-                                  profile.role_key === "super"
-                                    ? "default"
-                                    : "secondary"
+                                  !profile.role_key
+                                    ? "destructive"
+                                    : profile.role_key === "super"
+                                      ? "default"
+                                      : "secondary"
                                 }
                               >
                                 {profile.role_key === "super"
                                   ? "Everything, including admins"
                                   : profile.role_key
                                     ? profile.role_key
-                                    : "Everything"}
+                                    : "No access — give them a role"}
                               </Badge>
 
                               {isCurrentUser && (

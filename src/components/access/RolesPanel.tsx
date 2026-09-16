@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useMemo, useState } from "react";
 import { adminFetch } from "@/lib/adminFetch";
+import { ScreensGrid } from "@/components/access/ScreensGrid";
+import { CollapsibleCard } from "@/components/access/CollapsibleCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SkeletonCard } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
@@ -114,9 +116,18 @@ export function RolesPanel() {
     [load],
   );
 
+  /*
+   * Everything except the screen permissions.
+   *
+   * Those are set in the grid at the top of this tab, where one row
+   * covers every role at once. Leaving them in the per-role lists too
+   * would be the same sixteen checkboxes repeated per role, and two
+   * controls writing one row is how they drift apart on screen.
+   */
   const byArea = useMemo(() => {
     const groups: Record<string, Permission[]> = {};
     for (const permission of data?.permissions ?? []) {
+      if (permission.key.startsWith("page.")) continue;
       (groups[permission.area] ??= []).push(permission);
     }
     return groups;
@@ -189,11 +200,22 @@ export function RolesPanel() {
         </CardContent>
       </Card>
 
+      {/* Which screens, before what they may change on them. */}
+      <ScreensGrid
+        roles={data.roles}
+        permissions={data.permissions}
+        granted={granted}
+        busy={busy}
+        onToggle={toggle}
+      />
+
       {data.roles.map((role) => (
-        <Card key={role.key}>
-          <CardHeader>
-            <div className="flex flex-wrap items-center gap-2">
-              <CardTitle className="text-base">{role.label}</CardTitle>
+        <CollapsibleCard
+          key={role.key}
+          title={role.label}
+          subtitle={role.description ?? undefined}
+          badges={
+            <>
               {role.is_super && (
                 <Badge variant="destructive" className="gap-1">
                   <ShieldCheck className="h-3 w-3" />
@@ -201,13 +223,10 @@ export function RolesPanel() {
                 </Badge>
               )}
               {role.system && <Badge variant="outline">built in</Badge>}
-            </div>
-            {role.description && (
-              <p className="text-[0.92rem] text-muted-foreground">{role.description}</p>
-            )}
-          </CardHeader>
-
-          <CardContent>
+            </>
+          }
+        >
+          <div className="px-6">
             {role.is_super ? (
               /* Not a list of ticked boxes, because unticking one would
                  change nothing — admin_can returns true for a super role
@@ -257,8 +276,8 @@ export function RolesPanel() {
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
+        </CollapsibleCard>
       ))}
     </div>
   );

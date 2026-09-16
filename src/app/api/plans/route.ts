@@ -511,30 +511,62 @@ export async function DELETE(request: NextRequest) {
     }
 
     /*
-     * Rewards that hand out this tier go with it.
+     * Say what is holding the tier, before trying to remove it.
      *
-     * Counted before the delete rather than after, so the response can
-     * say what went. The confirm dialog already warned using the same
-     * numbers from GET; this is the record of what actually happened.
+     * A promo code or invite milestone can hand a tier out as a reward,
+     * and the database refuses to delete a tier while anything still
+     * names it. That refusal arrived here as a Postgres error object —
+     * not an Error instance, so failed() could not read a message off
+     * it and answered "Failed to remove that tier." for every cause
+     * alike.
+     *
+     * Checking first means the answer names the thing to go and fix,
+     * which is the only version of this message anybody can act on.
      */
-    const { count: rewardCount } = await auth.supabase
-      .from("promo_rewards")
-      .select("id", { count: "exact", head: true })
-      .eq("plan_key", key);
+    const [promoUse, inviteUse] = await Promise.all([
+      auth.supabase
+        .from("promo_rewards")
+        .select("promo_id, promo_codes(code)")
+        .eq("plan_key", key),
+      auth.supabase
+        .from("referral_rewards")
+        .select("milestone, side")
+        .eq("plan_key", key),
+    ]);
 
-    const { count: inviteCount } = await auth.supabase
-      .from("referral_rewards")
-      .select("id", { count: "exact", head: true })
-      .eq("plan_key", key);
+    const blockers: string[] = [];
+
+    for (const row of promoUse.data ?? []) {
+      const promo = (row as { promo_codes?: { code?: string } | null }).promo_codes;
+      blockers.push(promo?.code ? `promo code ${promo.code}` : "a promo code");
+    }
+
+    for (const row of inviteUse.data ?? []) {
+      const r = row as { milestone: string; side: string };
+      blockers.push(`the "${r.milestone}" invite reward (${r.side})`);
+    }
+
+    if (blockers.length > 0) {
+      const list =
+        blockers.length === 1
+          ? blockers[0]
+          : `${blockers.slice(0, -1).join(", ")} and ${blockers[blockers.length - 1]}`;
+
+      return NextResponse.json(
+        {
+          error:
+            `This tier is given away by ${list}. ` +
+            `Remove it from ${blockers.length === 1 ? "that reward" : "those rewards"} first, ` +
+            `or retire the tier instead so nobody new can buy it.`,
+        },
+        { status: 409 },
+      );
+    }
 
     const { error } = await auth.supabase.from("plans").delete().eq("key", key);
     if (error) throw error;
 
-    return NextResponse.json({
-      ok: true,
-      retired: false,
-      removedRewards: (rewardCount ?? 0) + (inviteCount ?? 0),
-    });
+    return NextResponse.json({ ok: true, retired: false });
   } catch (error) {
     return failed(error, "Failed to remove that tier.");
   }

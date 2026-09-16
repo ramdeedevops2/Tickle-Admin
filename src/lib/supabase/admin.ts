@@ -44,6 +44,54 @@ export type AdminAuth =
   | { error?: undefined; supabase: SupabaseClient; user: User };
 
 /**
+ * The screen each API route belongs to.
+ *
+ * A route that names no permission of its own is gated on the screen it
+ * serves, so a role that cannot open Plans cannot read /api/plans
+ * either. Matched longest-prefix-first.
+ *
+ * Routes absent from this list stay open to any admin with a role.
+ * That is deliberate for the genuinely shared ones — search, the member
+ * picker, settings — which several screens call and which give away
+ * nothing a signed-in admin cannot already see.
+ */
+const ROUTE_SCREEN: { prefix: string; permission: string }[] = [
+  { prefix: "/api/plans", permission: "page.plans" },
+  { prefix: "/api/economy", permission: "page.plans" },
+  { prefix: "/api/roses", permission: "page.roses" },
+  { prefix: "/api/promos", permission: "page.codes" },
+  { prefix: "/api/promo-rewards", permission: "page.codes" },
+  { prefix: "/api/invites", permission: "page.codes" },
+  { prefix: "/api/seed-profiles", permission: "page.seed" },
+  { prefix: "/api/roles", permission: "page.access" },
+  { prefix: "/api/admins", permission: "page.access" },
+  { prefix: "/api/compatibility", permission: "page.compatibility" },
+  { prefix: "/api/fields", permission: "page.fields" },
+  { prefix: "/api/filters", permission: "page.fields" },
+  { prefix: "/api/messaging", permission: "page.messaging" },
+  { prefix: "/api/places", permission: "page.places" },
+  { prefix: "/api/venues", permission: "page.places" },
+  { prefix: "/api/hearts", permission: "page.hearts" },
+  { prefix: "/api/safety", permission: "page.safety" },
+  { prefix: "/api/moderation", permission: "page.safety" },
+  { prefix: "/api/moderate", permission: "page.safety" },
+  { prefix: "/api/reports", permission: "page.safety" },
+  { prefix: "/api/verification", permission: "page.safety" },
+  { prefix: "/api/members", permission: "page.members" },
+  { prefix: "/api/adjust", permission: "page.members" },
+  { prefix: "/api/view-as", permission: "page.members" },
+  { prefix: "/api/metrics", permission: "page.pulse" },
+  { prefix: "/api/pulse-sections", permission: "page.pulse" },
+];
+
+/** The screen permission a path falls back to, if any. */
+function screenFor(pathname: string): string | undefined {
+  return ROUTE_SCREEN.find(
+    (entry) => pathname === entry.prefix || pathname.startsWith(`${entry.prefix}/`),
+  )?.permission;
+}
+
+/**
  * Authenticate, and optionally authorise.
  *
  * Until now this only asked whether `role` was the string "admin". The
@@ -55,18 +103,16 @@ export type AdminAuth =
  *
  * Passing `permission` now gates the route on it for real.
  *
- * Two deliberate conservative choices:
+ * A route that names no `permission` falls back to the screen it feeds
+ * (see ROUTE_SCREEN below), so the data behind a screen somebody cannot
+ * open is refused as well as hidden. Before that fallback existed,
+ * hiding the Plans tab from a role still left /api/plans readable to
+ * them by typing the address — the interface was gated and the data
+ * was not.
  *
- *   - A route with no `permission` keeps the old rule (must be
- *     role "admin"). Opening every ungated route to every role as a
- *     side effect of adding enforcement would be a widening nobody
- *     asked for; routes join the new system one at a time, by being
- *     given a permission.
- *
- *   - An admin whose `role_key` was never backfilled is treated as the
- *     built-in "admin" role rather than as having no permissions. The
- *     alternative locks the only administrator out of their own panel,
- *     which is a worse failure than a slightly generous default.
+ * A null `role_key` is refused outright. It used to mean "predates the
+ * roles system, allow everything", which quietly made every newly added
+ * admin a full administrator.
  */
 export async function requireAdmin(
   request: NextRequest,
@@ -102,43 +148,30 @@ export async function requireAdmin(
 
   const roleKey = (profile.role_key as string | null) ?? null;
 
-  // Ungated route: unchanged behaviour.
-  if (!permission) {
-    if (profile.role !== "admin") {
-      return {
-        error: NextResponse.json({ error: "Admin access required." }, { status: 403 }),
-      };
-    }
-    return { supabase, user };
-  }
-
-  /*
-   * Nobody has assigned this person a role yet.
-   *
-   * Before enforcement existed they could do everything, so anyone
-   * still in that state keeps it. Resolving them to the built-in
-   * "admin" role instead would look tidier and would lock the only
-   * administrator out of the roles page — the one screen that could
-   * undo the problem. Enforcement begins the moment a role is
-   * deliberately assigned.
-   */
-  if (!roleKey) {
-    if (profile.role === "admin") return { supabase, user };
-
+  if (profile.role !== "admin" || !roleKey) {
     return {
-      error: NextResponse.json(
-        { error: "No role assigned. Ask a super admin to give you one." },
-        { status: 403 },
-      ),
+      error: NextResponse.json({ error: "Admin access required." }, { status: 403 }),
     };
   }
 
-  const allowed = await hasPermission(supabase, roleKey, permission);
+  /*
+   * A route that names no permission inherits its screen's.
+   *
+   * Annotating seventy-odd routes by hand is seventy chances to miss
+   * one, and a missed route is silently open rather than loudly broken.
+   * Falling back to the screen map means a new route under an existing
+   * prefix is covered the moment it is written.
+   */
+  const required = permission ?? screenFor(new URL(request.url).pathname);
+
+  if (!required) return { supabase, user };
+
+  const allowed = await hasPermission(supabase, roleKey, required);
 
   if (!allowed) {
     return {
       error: NextResponse.json(
-        { error: `Your role cannot do this (${permission}).` },
+        { error: `Your role cannot do this (${required}).` },
         { status: 403 },
       ),
     };
@@ -181,10 +214,45 @@ async function hasPermission(
   return Boolean(grant);
 }
 
-/** Turns a thrown error into the JSON shape every route here returns. */
+/**
+ * Turns a thrown error into the JSON shape every route here returns.
+ *
+ * ── Why this reads more than `instanceof Error` ───────────────
+ *
+ * Supabase rejects with a plain object — `{ message, code, details,
+ * hint }` — not an Error instance. So every database refusal fell past
+ * the instanceof check to the fallback, and the panel said "Failed to
+ * remove that tier." whether the cause was a foreign key, a permission,
+ * or a typo in a column name. The one piece of information worth having
+ * was the one piece being discarded.
+ *
+ * A few Postgres codes are rewritten into something a non-technical
+ * admin can act on; anything else passes its own message through, which
+ * is still far better than a fallback that says only that something
+ * went wrong.
+ */
 export function failed(error: unknown, fallback: string) {
+  const db = error as
+    | { message?: string; code?: string; details?: string; hint?: string }
+    | null;
+
+  const code = db?.code;
+  let message = error instanceof Error ? error.message : db?.message;
+
+  // 23503: foreign key violation — something else still points at this.
+  if (code === "23503") {
+    message =
+      "Something else in the app still uses this, so it cannot be removed yet." +
+      (db?.details ? ` (${db.details})` : "");
+  }
+
+  // 23505: unique violation — a row with this identity already exists.
+  if (code === "23505") {
+    message = "Something with that name or key already exists.";
+  }
+
   return NextResponse.json(
-    { error: error instanceof Error ? error.message : fallback },
+    { error: message || fallback },
     { status: 500 },
   );
 }

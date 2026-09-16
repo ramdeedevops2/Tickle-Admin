@@ -213,26 +213,23 @@ export function PlanEditor() {
       const rewards = data?.rewardsByPlan?.[plan.key] ?? 0;
 
       /*
-       * Two different warnings, and rewards only matter for a real
-       * delete.
+       * Warn before the attempt, rather than only explaining after it.
        *
-       * Retiring leaves the row in place, so a promo that hands out
-       * this tier keeps working. Deleting takes those rewards with it —
-       * which the foreign key used to refuse outright, surfacing as
-       * "Failed to remove that tier" with nothing said about why.
+       * A tier that a promo code hands out cannot be deleted at all —
+       * the database refuses. Saying so here means the dialog offers
+       * the choice honestly instead of inviting a press that is going
+       * to fail.
        */
-      const rewardWarning =
-        rewards > 0
-          ? ` ${rewards} ${rewards === 1 ? "reward that gives" : "rewards that give"} ` +
-            `this tier will be removed from their promo codes and invite milestones.`
-          : "";
+      const blocked = members === 0 && rewards > 0;
 
       const yes = await confirm({
         title: members > 0 ? `Retire ${plan.label}?` : `Delete ${plan.label}?`,
         body:
           members > 0
             ? `${members} ${members === 1 ? "person is" : "people are"} on this tier. They keep it until it runs out; nobody new can buy it.`
-            : `Nobody is on this tier, so it goes for good.${rewardWarning}`,
+            : blocked
+              ? `This tier is given away by ${rewards} ${rewards === 1 ? "reward" : "rewards"}, so it cannot be deleted yet. Remove it from ${rewards === 1 ? "that reward" : "those rewards"} first — the next screen will name ${rewards === 1 ? "it" : "them"}.`
+              : "Nobody is on this tier, so it goes for good.",
         confirmLabel: members > 0 ? "Retire it" : "Delete it",
         tone: "danger",
       });

@@ -33,7 +33,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
        */
       const { data: profile, error: profileError } = await supabase
         .from('admin_profiles')
-        .select('role')
+        .select('role, role_key')
         .eq('id', session.user.id)
         .maybeSingle();
 
@@ -47,6 +47,21 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         console.warn('[AuthGuard] no admin row for', session.user.id);
         await supabase.auth.signOut();
         router.push("/login?error=no-admin-row");
+        return;
+      }
+
+      /*
+       * A role is required to get in, not merely an admin row.
+       *
+       * This checked 'role' alone, so somebody whose role_key was never
+       * set could load the whole panel and watch every request inside
+       * it fail with 403 — the server stopped trusting a null role_key
+       * but this did not. Refusing at the door says the one useful
+       * thing instead: nobody has given you a role yet.
+       */
+      if (!profile.role_key) {
+        await supabase.auth.signOut();
+        router.push("/login?error=no-role");
         return;
       }
 

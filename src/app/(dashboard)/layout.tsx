@@ -1,6 +1,7 @@
 import { AppSidebar } from "@/components/sidebar/AppSidebar";
 import AuthGuard from "@/components/AuthGuard";
 import { TopBar } from "@/components/sidebar/TopBar";
+import { PageGuard } from "@/components/PageGuard";
 
 /*
  * Sidebar, then content — and only the content scrolls.
@@ -48,7 +49,7 @@ export default function DashboardLayout({
         >
           <TopBar />
           <div className="mx-auto w-full max-w-[100rem] flex-1 px-5 pb-6">
-            {children}
+            <PageGuard>{children}</PageGuard>
           </div>
         </main>
       </div>
