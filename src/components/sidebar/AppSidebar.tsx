@@ -12,6 +12,7 @@ import {
   ShieldAlert,
   MapPin,
   KeyRound,
+  Scale,
   MessageSquare,
   Sparkles,
   Store,
@@ -22,6 +23,7 @@ import {
   Ticket,
   Flower2,
   FlaskConical,
+  Globe,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
@@ -129,6 +131,14 @@ const NAV: { heading: string; items: NavItem[] }[] = [
         icon: FlaskConical,
         permission: "page.seed",
       },
+      // Shares the Test profiles grant: both are testing tools, and a
+      // screen of its own would need a database change it does not use.
+      {
+        name: "Read a website",
+        url: "/web-reader",
+        icon: Globe,
+        permission: "page.seed",
+      },
     ],
   },
   {
@@ -149,6 +159,14 @@ const NAV: { heading: string; items: NavItem[] }[] = [
         permission: "page.messaging",
       },
       { name: "Access", url: "/access", icon: KeyRound, permission: "page.access" },
+      /*
+       * The two public pages Apple reads, edited here.
+       *
+       * Under Rules rather than its own group: it is a thing you set
+       * and leave, like the matching questions and the profile fields,
+       * not something looked at daily.
+       */
+      { name: "Terms & privacy", url: "/legal", icon: Scale, permission: "page.legal" },
     ],
   },
 ];

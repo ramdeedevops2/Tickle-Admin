@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { adminTable } from "@/lib/adminFetch";
 
 /**
@@ -33,6 +33,34 @@ export type NamedRow = {
 export function useNames() {
   const [names, setNames] = useState<Map<string, NamedRow>>(new Map());
 
+  /*
+   * The same map, readable synchronously.
+   *
+   * ── Why a ref as well as state ────────────────────────────────
+   *
+   * resolve() has to answer "which of these ids do I not have yet?"
+   * before it can fetch, and it must not take `names` as a dependency
+   * or it would be re-created on every resolved batch and restart the
+   * loaders that hold it in their own dep arrays.
+   *
+   * It used to get that answer by calling setNames with an updater that
+   * read `current`, assigned to a variable in the enclosing scope, and
+   * returned `current` unchanged. That is a side effect inside an
+   * updater, and it is unreliable in two ways: returning identical
+   * state makes React bail out of the re-render, and under StrictMode
+   * the updater runs twice — so the variable was written against state
+   * that had already moved.
+   *
+   * The visible result was every name in the dashboard's activity feed
+   * rendering as "…" — the placeholder for "not looked up yet" — while
+   * the ids were valid and the request would have succeeded.
+   *
+   * The ref carries the same contents and is safe to read outright.
+   * State stays because it is what re-renders the list when names land;
+   * the ref is only the lookup.
+   */
+  const known = useRef<Map<string, NamedRow>>(new Map());
+
   /**
    * Look up whichever ids are not already known.
    *
@@ -47,38 +75,39 @@ export function useNames() {
 
     if (wanted.length === 0) return;
 
-    // Reading `names` through the setter rather than as a dependency:
-    // this callback stays stable, so it can sit in a loader's dep array
-    // without re-creating it on every resolved batch.
-    let missing: string[] = [];
-
-    setNames((current) => {
-      missing = wanted.filter((id) => !current.has(id));
-      return current;
-    });
+    const missing = wanted.filter((id) => !known.current.has(id));
 
     if (missing.length === 0) return;
+
+    /*
+     * Claimed before the request, not after.
+     *
+     * Two lists mounting at once both call resolve with overlapping
+     * ids, and without this each sees an unclaimed map and fetches the
+     * same profiles twice. Recording them now makes the second call a
+     * no-op; the real rows overwrite these placeholders when they land.
+     */
+    for (const id of missing) {
+      known.current.set(id, { user_id: id, name: null, email: null });
+    }
 
     const { data } = await adminTable<NamedRow>("profiles", {
       select: "user_id, name, email, photos",
       in: ["user_id", missing],
     });
 
-    setNames((current) => {
-      const next = new Map(current);
+    // The ref first, so a resolve() racing this one sees the answer.
+    // Ids that came back with nothing keep the placeholder set above,
+    // which is what stops every later call asking for them forever.
+    for (const row of data ?? []) known.current.set(row.user_id, row);
 
-      for (const row of data ?? []) next.set(row.user_id, row);
-
-      // Ids that came back with nothing are recorded as looked-up, or
-      // every later call asks for them again forever.
-      for (const id of missing) {
-        if (!next.has(id)) {
-          next.set(id, { user_id: id, name: null, email: null });
-        }
-      }
-
-      return next;
-    });
+    /*
+     * A new Map every time, deliberately.
+     *
+     * Handing React the same reference back makes it bail out of the
+     * re-render, and the names never appear however correct the data is.
+     */
+    setNames(new Map(known.current));
   }, []);
 
   /** What to call somebody. Never a uuid. */

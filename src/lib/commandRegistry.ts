@@ -36,6 +36,7 @@ import {
   Ticket,
   Gavel,
   LifeBuoy,
+  Globe,
 } from "lucide-react";
 
 /**
@@ -342,6 +343,16 @@ export const COMMANDS: CommandEntry[] = [
     kind: "page",
     icon: MapPin,
     href: "/geo",
+    group: "Pages",
+  },
+  {
+    id: "page:web-reader",
+    title: "Read a website",
+    subtitle: "See what is on any public web page, for testing",
+    keywords: ["scrape", "scraper", "crawl", "fetch", "url", "web page"],
+    kind: "page",
+    icon: Globe,
+    href: "/web-reader",
     group: "Pages",
   },
   {

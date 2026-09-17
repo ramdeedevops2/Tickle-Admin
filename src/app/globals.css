@@ -188,11 +188,46 @@
    * The document itself never scrolls — see the note in the dashboard
    * layout. Without this the page grows a scrollbar the fixed rails sit
    * underneath, which is what made the right rail look clipped.
+   *
+   * ── Why the body class matters ────────────────────────────────
+   *
+   * This applied to html and body outright, which was right while every
+   * page in this project was the dashboard. The public /terms and
+   * /privacy pages are not: they are several screens of prose in normal
+   * document flow, and locking the document to one viewport height with
+   * overflow hidden rendered the entire text and then clipped it at the
+   * fold, unreachable.
+   *
+   * The lock is now claimed by the dashboard rather than imposed on
+   * everything. `.app-locked` is set on <body> by the dashboard layout;
+   * any page that does not set it scrolls the way a document should.
+   */
+  /*
+   * min-height, not height; and no overflow lock.
+   *
+   * ── What this used to be, and why it was wrong ────────────────
+   *
+   * `html, body { height: 100%; overflow: hidden }` — so the document
+   * never scrolled and the dashboard's fixed rails could not be
+   * underlapped by a scrollbar.
+   *
+   * That was right while every page here was the dashboard, and it is
+   * not something the dashboard actually needs: its shell already sets
+   * `h-screen overflow-hidden` on its own wrapper and scrolls inside a
+   * child. The body rule was belt and braces.
+   *
+   * It broke the public /terms and /privacy pages completely. Those are
+   * several screens of prose in ordinary document flow, and a body
+   * capped at one viewport with overflow hidden rendered the whole text
+   * and then clipped it at the fold with no way to scroll to the rest.
+   *
+   * min-height keeps the full-height box for anything that wants it and
+   * lets a long document grow past it, which is how a document should
+   * behave.
    */
   html,
   body {
-    height: 100%;
-    overflow: hidden;
+    min-height: 100%;
   }
 
   body {

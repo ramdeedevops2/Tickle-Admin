@@ -34,10 +34,12 @@ const PAGE_PERMISSION: { prefix: string; permission: string }[] = [
   { prefix: "/plans", permission: "page.plans" },
   { prefix: "/codes", permission: "page.codes" },
   { prefix: "/seed", permission: "page.seed" },
+  { prefix: "/web-reader", permission: "page.seed" },
   { prefix: "/compatibility", permission: "page.compatibility" },
   { prefix: "/fields", permission: "page.fields" },
   { prefix: "/messaging", permission: "page.messaging" },
   { prefix: "/access", permission: "page.access" },
+  { prefix: "/legal", permission: "page.legal" },
   { prefix: "/", permission: "page.pulse" },
 ];
 
