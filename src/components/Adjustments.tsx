@@ -27,7 +27,8 @@ type AuditRow = {
 };
 
 const KIND_LABELS: Record<string, string> = {
-  hearts: "Hearts",
+  // The key stays `hearts` (the server's name for it); people see Roses.
+  hearts: "Roses",
   premium_days: "Premium days",
   verify: "Mark verified",
   unverify: "Remove verification",
@@ -113,7 +114,7 @@ export function Adjustments({ userId }: { userId: string }) {
             onChange={(event) => setAmount(event.target.value)}
             placeholder={
               kind === "hearts"
-                ? "How many Hearts — negative to take away"
+                ? "How many Roses — negative to take away"
                 : "How many days — negative to take away"
             }
           />
@@ -159,7 +160,7 @@ export function Adjustments({ userId }: { userId: string }) {
                   )}
 
                   {/* The before/after is the part that answers questions
-                    later."Adjusted Hearts" explains nothing;"40 to
+                    later."Adjusted Roses" explains nothing;"40 to
                     4000" explains everything. */}
                   {row.before_state && row.after_state && (
                     <p className="font-mono text-[0.86rem] text-muted-foreground">
