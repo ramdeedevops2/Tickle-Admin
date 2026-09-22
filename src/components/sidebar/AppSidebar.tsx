@@ -1,9 +1,9 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useMyAccess } from "@/lib/useMyAccess";
 import {
   Activity,
@@ -17,7 +17,6 @@ import {
   Sparkles,
   Store,
   Puzzle,
-  LogOut,
   ListChecks,
   Coins,
   Ticket,
@@ -25,7 +24,6 @@ import {
   FlaskConical,
   Globe,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
 /*
@@ -221,44 +219,6 @@ export function AppSidebar() {
     // is what actually changes, so that is what this depends on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
-  const router = useRouter();
-  const supabase = createClient();
-  const [user, setUser] = useState<{ name: string; role: string } | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-
-    const load = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user || !alive) return;
-
-      const { data: profile } = await supabase
-        .from("admin_profiles")
-        .select("display_name, role")
-        .eq("id", user.id)
-        .single();
-
-      if (alive) {
-        setUser({
-          name: profile?.display_name || "Admin",
-          role: profile?.role || "admin",
-        });
-      }
-    };
-
-    void load();
-    return () => {
-      alive = false;
-    };
-  }, [supabase]);
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
-    router.push("/login");
-  };
-
   return (
     /*
      * Fixed, and it never scrolls.
@@ -311,36 +271,6 @@ export function AppSidebar() {
         ))}
       </nav>
 
-      {/*
-       * Who is signed in, above the way out.
-       *
-       * The name gets two lines rather than one truncating line — it is
-       * the one piece of text here whose whole job is to be read, and
-       * `break-all` because an email-style name has no spaces to break
-       * at. `title` keeps the full string reachable for the very long.
-       */}
-      <div className="mt-3 border-t border-sidebar-border px-2.5 pt-3 pb-1">
-        <p
-          title={user?.name ?? "Admin"}
-          className="line-clamp-2 text-[0.92rem] leading-snug font-medium break-all"
-        >
-          {user?.name ?? "Admin"}
-        </p>
-        <p className="mt-0.5 truncate text-[0.8rem] text-muted-foreground">
-          {user?.role ?? "admin"}
-        </p>
-      </div>
-
-      {/* Sign out is the last thing anyone does and the one destructive
-          control here, so it sits apart from the links. */}
-      <button
-        type="button"
-        onClick={signOut}
-        className="flex items-center gap-2.5 rounded-lg px-2.5 py-[0.32rem] text-[1rem] text-sidebar-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-      >
-        <LogOut className="size-4 shrink-0" />
-        <span>Sign out</span>
-      </button>
     </aside>
   );
 }
