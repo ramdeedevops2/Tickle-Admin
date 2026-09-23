@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import {
+  Coffee,
   Activity,
   Users,
   Flower2,
@@ -133,6 +134,16 @@ export const COMMANDS: CommandEntry[] = [
     kind: "page",
     icon: Store,
     href: "/places",
+    group: "Pages",
+  },
+  {
+    id: "page:coffee",
+    title: "Coffee Date",
+    subtitle: "What people can be up for",
+    keywords: ["coffee", "date", "kinds", "options", "gym", "food", "movie"],
+    kind: "page",
+    icon: Coffee,
+    href: "/coffee",
     group: "Pages",
   },
   {

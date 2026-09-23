@@ -28,6 +28,7 @@ const PAGE_PERMISSION: { prefix: string; permission: string }[] = [
   { prefix: "/connections", permission: "page.connections" },
   { prefix: "/hearts", permission: "page.hearts" },
   { prefix: "/places", permission: "page.places" },
+  { prefix: "/coffee", permission: "page.coffee" },
   { prefix: "/geo", permission: "page.geo" },
   { prefix: "/safety", permission: "page.safety" },
   { prefix: "/roses", permission: "page.roses" },

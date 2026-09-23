@@ -23,6 +23,7 @@ import {
   Flower2,
   FlaskConical,
   Globe,
+  Coffee,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -85,6 +86,7 @@ const NAV: { heading: string; items: NavItem[] }[] = [
     items: [
       { name: "Hearts", url: "/hearts", icon: Sparkles, permission: "page.hearts" },
       { name: "Places", url: "/places", icon: Store, permission: "page.places" },
+      { name: "Coffee Date", url: "/coffee", icon: Coffee, permission: "page.coffee" },
       { name: "Location", url: "/geo", icon: MapPin, permission: "page.geo" },
     ],
   },

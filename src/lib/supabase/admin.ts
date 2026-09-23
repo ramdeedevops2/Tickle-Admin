@@ -71,6 +71,7 @@ const ROUTE_SCREEN: { prefix: string; permission: string }[] = [
   { prefix: "/api/fields", permission: "page.fields" },
   { prefix: "/api/filters", permission: "page.fields" },
   { prefix: "/api/messaging", permission: "page.messaging" },
+  { prefix: "/api/coffee-kinds", permission: "page.coffee" },
   { prefix: "/api/places", permission: "page.places" },
   { prefix: "/api/venues", permission: "page.places" },
   { prefix: "/api/hearts", permission: "page.hearts" },
