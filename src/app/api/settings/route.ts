@@ -45,6 +45,7 @@ type SettingsRow = {
   place_cache_ttl: string;
   max_hearts_per_day: number;
   blocked_categories: string[];
+  vibes: string[] | null;
 };
 
 export async function GET(request: NextRequest) {
@@ -72,6 +73,7 @@ export async function GET(request: NextRequest) {
         spark_ttl_days: intervalToHours(row.spark_ttl) / 24,
         place_cache_ttl_days: intervalToHours(row.place_cache_ttl) / 24,
         blocked_categories: row.blocked_categories ?? [],
+        vibes: row.vibes ?? [],
       },
     });
   } catch (error) {
@@ -124,6 +126,28 @@ export async function PATCH(request: NextRequest) {
       update.blocked_categories = body.blocked_categories
         .map((entry) => String(entry).trim().toLowerCase())
         .filter(Boolean);
+    }
+
+    /*
+     * The vibe chips. Kept in the case they were typed in — these are shown
+     * to people, not matched against Google's category names — and never
+     * saved empty, since the sheet would then offer nothing and there is no
+     * way back to a list from inside the app.
+     */
+    if (Array.isArray(body.vibes)) {
+      const vibes = body.vibes
+        .map((entry) => String(entry).trim())
+        .filter(Boolean)
+        .slice(0, 12);
+
+      if (vibes.length === 0) {
+        return NextResponse.json(
+          { error: "Keep at least one thing people can say they are up to." },
+          { status: 400 }
+        );
+      }
+
+      update.vibes = vibes;
     }
 
     if (Object.keys(update).length === 0) {

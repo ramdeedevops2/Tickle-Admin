@@ -32,10 +32,11 @@ type Settings = {
   spark_ttl_days: number;
   place_cache_ttl_days: number;
   blocked_categories: string[];
+  vibes: string[];
 };
 
 const FIELDS: {
-  key: keyof Omit<Settings, "blocked_categories">;
+  key: keyof Omit<Settings, "blocked_categories" | "vibes">;
   anchor: string;
   label: string;
   hint: string;
@@ -121,6 +122,7 @@ export function HeartSettingsPanel() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [categories, setCategories] = useState("");
+  const [vibes, setVibes] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +146,7 @@ export function HeartSettingsPanel() {
       ),
     );
     setCategories((data.settings.blocked_categories ?? []).join(", "));
+    setVibes((data.settings.vibes ?? []).join(", "));
     setLoading(false);
   }, []);
 
@@ -152,7 +155,8 @@ export function HeartSettingsPanel() {
   const dirty =
     settings !== null &&
     (FIELDS.some((field) => draft[field.key] !== String(settings[field.key])) ||
-      categories !== settings.blocked_categories.join(", "));
+      categories !== settings.blocked_categories.join(", ") ||
+      vibes !== (settings.vibes ?? []).join(", "));
 
   const save = useCallback(async () => {
     setSaving(true);
@@ -163,6 +167,11 @@ export function HeartSettingsPanel() {
     );
     body.blocked_categories = categories
       .split(", ")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    body.vibes = vibes
+      .split(",")
       .map((entry) => entry.trim())
       .filter(Boolean);
 
@@ -178,7 +187,7 @@ export function HeartSettingsPanel() {
     }
 
     setSaving(false);
-  }, [draft, categories, load]);
+  }, [draft, categories, vibes, load]);
 
   return (
     <div className="space-y-4">
@@ -243,6 +252,19 @@ export function HeartSettingsPanel() {
               value={categories}
               onChange={(event) => setCategories(event.target.value)}
               placeholder="hospital, school, place_of_worship"
+              className="w-full"
+            />
+          </Section>
+
+          <Section
+            title="What people can say they are up to"
+            hint="The choices offered when somebody leaves a heart, separated by commas. Written exactly as they will read on the phone. Leave at least one."
+          >
+            <Input
+              id="heart-vibes"
+              value={vibes}
+              onChange={(event) => setVibes(event.target.value)}
+              placeholder="Just here, Up for a drink, Working"
               className="w-full"
             />
           </Section>
