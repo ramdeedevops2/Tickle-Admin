@@ -67,6 +67,7 @@ const ROUTE_SCREEN: { prefix: string; permission: string }[] = [
   { prefix: "/api/roles", permission: "page.access" },
   { prefix: "/api/admins", permission: "page.access" },
   { prefix: "/api/legal", permission: "page.legal" },
+  { prefix: "/api/site-media", permission: "page.media" },
   { prefix: "/api/compatibility", permission: "page.compatibility" },
   { prefix: "/api/fields", permission: "page.fields" },
   { prefix: "/api/filters", permission: "page.fields" },

@@ -22,7 +22,12 @@ import { useMyAccess } from "@/lib/useMyAccess";
  */
 
 /** Route prefix to the permission that opens it. */
-const PAGE_PERMISSION: { prefix: string; permission: string }[] = [
+const PAGE_PERMISSION: {
+  prefix: string;
+  permission: string;
+  /** A second grant that also opens the screen. */
+  alsoOpenedBy?: string;
+}[] = [
   // Longest first: "/" matches everything, so it has to be tested last.
   { prefix: "/members", permission: "page.members" },
   { prefix: "/connections", permission: "page.connections" },
@@ -40,6 +45,9 @@ const PAGE_PERMISSION: { prefix: string; permission: string }[] = [
   { prefix: "/fields", permission: "page.fields" },
   { prefix: "/messaging", permission: "page.messaging" },
   { prefix: "/access", permission: "page.access" },
+  // Terms and privacy live on this screen too, so either grant opens it.
+  // The screen then shows only the half the holder may actually edit.
+  { prefix: "/media", permission: "page.media", alsoOpenedBy: "page.legal" },
   { prefix: "/legal", permission: "page.legal" },
   { prefix: "/", permission: "page.pulse" },
 ];
@@ -56,7 +64,12 @@ export function PageGuard({ children }: { children: React.ReactNode }) {
     (entry) => pathname === entry.prefix || pathname.startsWith(`${entry.prefix}/`),
   );
 
-  if (match && !can(match.permission)) {
+  const allowed =
+    !match ||
+    can(match.permission) ||
+    (match.alsoOpenedBy ? can(match.alsoOpenedBy) : false);
+
+  if (!allowed) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center gap-2 px-6 text-center">
         <h1 className="text-[1.05rem] font-semibold">This screen is not yours to open</h1>

@@ -12,7 +12,6 @@ import {
   ShieldAlert,
   MapPin,
   KeyRound,
-  Scale,
   MessageSquare,
   Sparkles,
   Store,
@@ -24,6 +23,7 @@ import {
   FlaskConical,
   Globe,
   Coffee,
+  Images,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +50,13 @@ type NavItem = {
   name: string;
   url: string;
   icon: React.ComponentType<{ className?: string }>;
+  /**
+   * A second permission that also opens this screen.
+   *
+   * For a screen that gathers two jobs which used to be separate: either
+   * grant gets you in, and the screen shows only the half you may use.
+   */
+  alsoOpenedBy?: string;
   /**
    * The permission that opens this screen.
    *
@@ -159,14 +166,27 @@ const NAV: { heading: string; items: NavItem[] }[] = [
         permission: "page.messaging",
       },
       { name: "Access", url: "/access", icon: KeyRound, permission: "page.access" },
+    ],
+  },
+  {
+    heading: "Website",
+    items: [
       /*
-       * The two public pages Apple reads, edited here.
+       * One entry, two jobs.
        *
-       * Under Rules rather than its own group: it is a thing you set
-       * and leave, like the matching questions and the profile fields,
-       * not something looked at daily.
+       * The pictures on the front page and the wording of the terms and
+       * privacy pages both change the same public site, so they share a
+       * screen. Either permission opens it, and each half of the screen
+       * checks its own — somebody who may edit the wording but not the
+       * pictures sees only the wording.
        */
-      { name: "Terms & privacy", url: "/legal", icon: Scale, permission: "page.legal" },
+      {
+        name: "Pictures and pages",
+        url: "/media",
+        icon: Images,
+        permission: "page.media",
+        alsoOpenedBy: "page.legal",
+      },
     ],
   },
 ];
@@ -182,7 +202,7 @@ function NavLink({ item, current }: { item: NavItem; current: boolean }) {
       href={item.url}
       aria-current={current ? "page" : undefined}
       className={cn(
-        "flex items-center gap-2.5 rounded-lg px-2.5 py-[0.32rem] text-[1rem] transition-colors duration-150",
+        "flex items-center gap-2.5 rounded-lg px-2.5 py-[0.32rem] text-[0.92rem] transition-colors duration-150",
         current
           ? "bg-primary font-medium text-primary-foreground"
           : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
@@ -215,7 +235,9 @@ export function AppSidebar() {
 
     return NAV.map((group) => ({
       ...group,
-      items: group.items.filter((item) => can(item.permission)),
+      items: group.items.filter(
+        (item) => can(item.permission) || (item.alsoOpenedBy ? can(item.alsoOpenedBy) : false),
+      ),
     })).filter((group) => group.items.length > 0);
     // `can` is rebuilt every render; the permission list it closes over
     // is what actually changes, so that is what this depends on.
@@ -251,17 +273,17 @@ export function AppSidebar() {
 
       <nav className="mt-3 flex min-h-0 flex-1 flex-col gap-0.5">
         {visibleNav.map((group) => (
-          /*
-           * No group heading. Naming five clusters costs five rows of
-           * text for categories nobody navigates by — people look for
-           * "Members", not for "Live". The grouping survives as a rule
-           * and a gap, which reads as a group without spending a line
-           * saying so.
-           */
+          /* Most group headings stay hidden; Website is labeled because
+             it brings the landing media and legal pages together. */
           <div
             key={group.heading}
             className="space-y-0.5 not-first:mt-3 not-first:border-t not-first:border-sidebar-border not-first:pt-3"
           >
+            {group.heading === "Website" && (
+              <p className="px-2.5 pb-1 text-[0.7rem] font-semibold uppercase tracking-[0.09em] text-muted-foreground">
+                Website
+              </p>
+            )}
             {group.items.map((item) => (
               <NavLink
                 key={item.url}

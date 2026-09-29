@@ -46,6 +46,7 @@ export function Select({
   const triggerRef = React.useRef<HTMLButtonElement>(null);
   const menuRef = React.useRef<HTMLDivElement>(null);
   const [box, setBox] = React.useState<DOMRect | null>(null);
+  const [opensUp, setOpensUp] = React.useState(false);
 
   /*
    * The menu is portalled to <body>, so it needs the trigger's position
@@ -60,7 +61,12 @@ export function Select({
 
     const measure = () => {
       const rect = triggerRef.current?.getBoundingClientRect();
-      if (rect) setBox(rect);
+      if (rect) {
+        setBox(rect);
+        const roomBelow = window.innerHeight - rect.bottom - 24;
+        const roomAbove = rect.top - 24;
+        setOpensUp(roomBelow < 220 && roomAbove > roomBelow);
+      }
     };
 
     measure();
@@ -115,7 +121,7 @@ export function Select({
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          "flex h-8 w-full items-center justify-between gap-2 rounded-lg border border-foreground/30 bg-card/70 px-3 text-[0.92rem] transition-all outline-none",
+          "flex h-9 w-full items-center justify-between gap-2 rounded-xl border border-foreground/20 bg-card/80 px-3 text-sm transition-all outline-none",
           "hover:border-foreground/45 hover:bg-card",
           "focus-visible:border-foreground/60 focus-visible:ring-3 focus-visible:ring-ring/15",
           open && "border-foreground/60 bg-card",
@@ -132,7 +138,7 @@ export function Select({
         </span>
         <ChevronDown
           className={cn(
-            "size-3 shrink-0 text-muted-foreground transition-transform duration-200",
+            "size-4 shrink-0 text-muted-foreground transition-transform duration-200",
             open && "rotate-180"
           )}
         />
@@ -152,13 +158,17 @@ export function Select({
           role="listbox"
           style={{
             position: "fixed",
-            top: box.bottom + 6,
+            top: opensUp ? undefined : box.bottom + 6,
+            bottom: opensUp ? window.innerHeight - box.top + 6 : undefined,
             left: align === "end" ? undefined : box.left,
             right: align === "end" ? window.innerWidth - box.right : undefined,
             minWidth: box.width,
-            // Never taller than the room below the trigger, so the list
-            // scrolls internally instead of running off the screen.
-            maxHeight: Math.max(160, window.innerHeight - box.bottom - 24),
+            // Keep the menu on screen. Near the bottom, anchor it above
+            // the trigger and let long lists scroll inside the menu.
+            maxHeight: Math.max(
+              120,
+              opensUp ? box.top - 24 : window.innerHeight - box.bottom - 24,
+            ),
           }}
           /*
            * Above the modals, deliberately.
@@ -173,7 +183,7 @@ export function Select({
            * A menu always belongs above the surface that owns it, so
            * this sits above the modal layer rather than beside it.
            */
-          className="animate-toast-in surface-float z-[400] overflow-auto rounded-xl p-1"
+          className="animate-toast-in surface-float z-[400] overflow-auto rounded-xl p-1.5"
         >
           {options.map((option) => {
             const active = option.value === value;
@@ -189,7 +199,7 @@ export function Select({
                   setOpen(false);
                 }}
                 className={cn(
-                  "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[0.92rem] transition-colors",
+                  "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
                   active
                     ? "bg-foreground/[0.06] font-medium"
                     : "hover:bg-foreground/[0.04]"
@@ -198,7 +208,7 @@ export function Select({
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{option.label}</span>
                   {option.hint && (
-                    <span className="block truncate text-[1rem] text-muted-foreground">
+                    <span className="block truncate pt-0.5 text-xs text-muted-foreground">
                       {option.hint}
                     </span>
                   )}
