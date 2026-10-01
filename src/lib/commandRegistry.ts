@@ -8,6 +8,7 @@ import {
   MessageSquare,
   ShieldAlert,
   Megaphone,
+  Bell,
   MapPin,
   KeyRound,
   Settings,
@@ -339,11 +340,58 @@ export const COMMANDS: CommandEntry[] = [
   {
     id: "page:broadcast",
     title: "Broadcast",
-    subtitle: "Send a notification to everyone",
-    keywords: ["notification", "push", "announce", "message all"],
+    /*
+     * Narrowed, now that Notifications exists.
+     *
+     * This used to answer "push" and "notification", which sent anybody
+     * looking for the settings to the one-off announcement composer
+     * instead. Broadcast is for writing a single message to everyone;
+     * the rules about what the app sends on its own live below.
+     */
+    subtitle: "Write one message and send it to everyone",
+    keywords: ["announce", "message all", "broadcast", "everyone"],
     kind: "page",
     icon: Megaphone,
     href: "/messaging?tab=announce",
+    group: "Pages",
+  },
+  {
+    id: "page:notifications",
+    title: "Notifications",
+    subtitle: "What the app tells members about, and which phones it reaches",
+    keywords: [
+      "notification",
+      "notifications",
+      "push",
+      "alerts",
+      "phones",
+      "devices",
+      "muted",
+      "turned off",
+    ],
+    kind: "page",
+    icon: Bell,
+    href: "/notifications",
+    group: "Pages",
+  },
+  {
+    id: "page:notifications-phones",
+    title: "Phones that can be reached",
+    subtitle: "Every device signed in and able to receive notifications",
+    keywords: ["devices", "phones", "tokens", "android", "iphone", "push"],
+    kind: "page",
+    icon: Bell,
+    href: "/notifications?tab=phones",
+    group: "Pages",
+  },
+  {
+    id: "page:notifications-sent",
+    title: "Notifications recently sent",
+    subtitle: "What went out in the last week, and whether it arrived",
+    keywords: ["sent", "delivered", "waiting", "history", "push"],
+    kind: "page",
+    icon: Bell,
+    href: "/notifications?tab=sent",
     group: "Pages",
   },
   {

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DataToolbar } from "@/components/DataToolbar";
 import Link from "next/link";
-import { adminTable } from "@/lib/adminFetch";
+import { adminFetch, adminTable } from "@/lib/adminFetch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { EmptyState } from "@/components/ui/page";
 import { ArrowLeft, Camera, Eye, MessageSquare, Mic, Timer, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { messageText } from "@/lib/messageText";
 
 /**
  * Reading messages the way they were written.
@@ -177,7 +178,10 @@ function PersonLink({
 /** What a bubble says when there is no text to say it — media, or a removal. */
 function summarise(message: MessageRow) {
   if (message.unsent_at) return "Unsent";
-  if (message.content) return message.content;
+
+  // Checked before the text rather than after: for an older photo the
+  // text is not something anybody wrote. See messageText.
+  if (message.content) return messageText(message.content);
 
   switch (message.kind) {
     case "photo":
@@ -213,6 +217,19 @@ function metaFor(message: MessageRow) {
 const PANE = "flex h-[min(34rem,calc(100vh-24rem))] min-h-[24rem] flex-col overflow-hidden rounded-2xl border border-foreground/[0.06] bg-card";
 
 export function MessageStreamPanel() {
+  /*
+   * Signed links for the pictures in the open thread.
+   *
+   * Keyed by whatever the message carries — `media_path` on newer rows,
+   * the `IMAGE:chat-media:…` text on older ones — so a lookup is the
+   * same string the bubble already has.
+   *
+   * Not held across threads: the links last ten minutes and a thread
+   * opened later re-signs. Keeping them would mean drawing a picture
+   * from an expired link and showing a broken image instead.
+   */
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
+
   const [recent, setRecent] = useState<MessageRow[]>([]);
   const [profiles, setProfiles] = useState<Map<string, ProfileRow>>(new Map());
   const [matches, setMatches] = useState<Map<string, MatchRow>>(new Map());
@@ -233,6 +250,40 @@ export function MessageStreamPanel() {
    * across everyone, so a busy day would silently truncate the
    * conversation you opened in order to read in full.
    */
+  /*
+   * Ask the server to open the pictures.
+   *
+   * chat-media is private and its read policy only admits the two
+   * people in the match — deliberately, so an admin is in neither side
+   * of it. The server signs with its own key instead; see
+   * /api/chat-media for why the policy is not widened.
+   */
+  const signMedia = useCallback(async (rows: MessageRow[]) => {
+    const paths = rows
+      .map((row) =>
+        row.media_path
+          ? row.media_path
+          : row.content?.startsWith("IMAGE:")
+            ? row.content
+            : null,
+      )
+      .filter((path): path is string => Boolean(path));
+
+    if (paths.length === 0) {
+      setMediaUrls({});
+      return;
+    }
+
+    const { data } = await adminFetch<{ urls: Record<string, string> }>(
+      "/api/chat-media",
+      { method: "POST", body: JSON.stringify({ paths }) },
+    );
+
+    // Silent on failure: the bubbles already say what the message is,
+    // and a toast per thread would be noise on a screen being skimmed.
+    setMediaUrls(data?.urls ?? {});
+  }, []);
+
   const loadThread = useCallback(async (matchId: string) => {
     setThreadLoading(true);
     setThreadError(null);
@@ -258,12 +309,15 @@ export function MessageStreamPanel() {
     if (error) {
       setThreadError(error);
       setThread([]);
+      setMediaUrls({});
     } else {
-      setThread(data ?? []);
+      const rows = data ?? [];
+      setThread(rows);
+      void signMedia(rows);
     }
 
     setThreadLoading(false);
-  }, []);
+  }, [signMedia]);
 
   const open = useCallback(
     (matchId: string) => {
@@ -636,10 +690,58 @@ export function MessageStreamPanel() {
                             message.unsent_at && "text-muted-foreground italic",
                           )}
                         >
-                          {Icon && (
-                            <Icon className="mr-1.5 inline size-3.5 align-[-2px] text-muted-foreground" />
-                          )}
-                          {summarise(message)}
+                          {(() => {
+                            /*
+                             * The picture itself, where there is one.
+                             *
+                             * This bubble used to print the word
+                             * "Photo" — or, worse, the storage path —
+                             * on a screen whose whole job is looking at
+                             * what people sent each other. Moderating a
+                             * reported conversation you cannot see is
+                             * most of the task missing.
+                             *
+                             * Falls back to the words when the link did
+                             * not come back: an expired or refused
+                             * signature should read as a photo that is
+                             * there, not as an empty bubble.
+                             */
+                            const key = message.media_path
+                              ? message.media_path
+                              : message.content?.startsWith("IMAGE:")
+                                ? message.content
+                                : null;
+
+                            const url = key ? mediaUrls[key] : undefined;
+                            const isPhoto =
+                              message.kind === "photo" ||
+                              message.content?.startsWith("IMAGE:");
+
+                            if (url && isPhoto && !message.unsent_at) {
+                              return (
+                                // Plain img, not next/image: the link is
+                                // signed, short-lived and off-origin, so
+                                // there is nothing for the optimiser to
+                                // cache and a remote pattern would have
+                                // to allow the whole storage host.
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={url}
+                                  alt="Photo sent in this conversation"
+                                  className="max-h-72 w-full rounded-xl object-cover"
+                                />
+                              );
+                            }
+
+                            return (
+                              <>
+                                {Icon && (
+                                  <Icon className="mr-1.5 inline size-3.5 align-[-2px] text-muted-foreground" />
+                                )}
+                                {summarise(message)}
+                              </>
+                            );
+                          })()}
                         </div>
 
                         <div

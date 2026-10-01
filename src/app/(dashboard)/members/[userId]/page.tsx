@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/pagination";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
 import { isOnline } from "@/lib/presence";
+import { messageText } from "@/lib/messageText";
 import {
   ArrowLeft,
   Heart,
@@ -568,7 +569,7 @@ export default function MemberProfilePage() {
                               Latest Message
                             </div>
                             <p className="line-clamp-3 text-muted-foreground">
-                              {messages[0].content}
+                              {messageText(messages[0].content)}
                             </p>
                           </div>
                         )}
@@ -606,7 +607,7 @@ export default function MemberProfilePage() {
                         <span>With {peerOfMatch(message.match_id)}</span>
                         <span>{formatDateTime(message.created_at)}</span>
                       </div>
-                      <p className="text-[0.92rem]">{message.content}</p>
+                      <p className="text-[0.92rem]">{messageText(message.content)}</p>
                     </div>
                   )}
                 </PagedList>

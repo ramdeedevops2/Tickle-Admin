@@ -24,6 +24,7 @@ import {
   Globe,
   Coffee,
   Images,
+  Bell,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -163,6 +164,20 @@ const NAV: { heading: string; items: NavItem[] }[] = [
         name: "Messaging",
         url: "/messaging",
         icon: MessageSquare,
+        permission: "page.messaging",
+      },
+      /*
+       * Beside Messaging rather than under Live.
+       *
+       * This screen is almost entirely rules — what the app is allowed
+       * to interrupt somebody for — and only incidentally a list of what
+       * went out. Grouping it with the things you watch would put a page
+       * of settings among the dashboards.
+       */
+      {
+        name: "Notifications",
+        url: "/notifications",
+        icon: Bell,
         permission: "page.messaging",
       },
       { name: "Access", url: "/access", icon: KeyRound, permission: "page.access" },
