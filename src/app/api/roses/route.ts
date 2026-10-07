@@ -71,6 +71,9 @@ const FIELDS: Record<string, Target> = {
 /** Tables `reward_value` may be written on, since the field name repeats. */
 const REWARD_TABLES = new Set(["referral_milestones", "city_missions", "platform_hearts"]);
 
+/** Switches on fairness_settings this page may flip. */
+const SWITCHES = new Set(["paid_media_enabled"]);
+
 /** Rows an admin may retire or restore from this page. */
 const TOGGLEABLE = new Set([
   "rose_packs",
@@ -119,6 +122,7 @@ export async function GET(request: NextRequest) {
       fairnessRes,
       heartsRes,
       milestonesRes,
+      referralRewardsRes,
       missionsRes,
       codesRes,
       attemptsRes,
@@ -140,6 +144,17 @@ export async function GET(request: NextRequest) {
       supabase.from("fairness_settings").select("*").eq("id", 1).maybeSingle(),
       supabase.from("heart_settings").select("*").eq("id", 1).maybeSingle(),
       supabase.from("referral_milestones").select("*").order("sort_order"),
+      /*
+       * Where an invite reward actually lives.
+       *
+       * 077 moved rewards off referral_milestones into rows per side, so
+       * a step can pay the referrer and the invitee differently. This
+       * page kept reading reward_kind/reward_value off the milestone —
+       * columns that no longer exist — so every row was filtered out and
+       * the section read "No referral milestone pays roses" while four
+       * rose rewards were being paid.
+       */
+      supabase.from("referral_rewards").select("*").order("sort_order"),
       supabase.from("city_missions").select("*").order("city_slug"),
       supabase.from("promo_codes").select("*").order("created_at", { ascending: false }),
       supabase
@@ -217,6 +232,53 @@ export async function GET(request: NextRequest) {
       (profileData ?? []) as unknown as NamedProfile[],
     );
 
+    /*
+     * Invite rewards, flattened into something this page can show.
+     *
+     * A reward row names its milestone by key and its side, so the
+     * label has to be assembled: "They joined — they get roses" reads
+     * as a thing that pays, where a bare "signup" does not. Only the
+     * rose-paying rows appear; a step that grants Premium days is a
+     * real reward and simply not this screen's business.
+     *
+     * reward_value is kept as the field name because the panel and the
+     * PATCH path both already speak it. What changed is the table it
+     * writes to.
+     */
+    const milestoneLabels = new Map(
+      (milestonesRes.data ?? []).map((row) => [
+        String((row as { key: string }).key),
+        String((row as { label?: string }).label ?? ""),
+      ]),
+    );
+
+    const inviteRewards = (referralRewardsRes.data ?? [])
+      .filter((row) => (row as { kind?: string }).kind === "roses")
+      .map((row) => {
+        const reward = row as {
+          id: string;
+          milestone: string;
+          side: string;
+          amount: number | null;
+          active: boolean;
+        };
+        const step = milestoneLabels.get(reward.milestone) ?? reward.milestone;
+        // Phrased per side rather than assembled from a pronoun, so
+        // neither reading comes out as "the person they invited get".
+        const who =
+          reward.side === "invitee"
+            ? "the person they invited gets roses"
+            : "they get roses";
+
+        return {
+          id: reward.id,
+          label: `${step} — ${who}`,
+          reward_kind: "roses",
+          reward_value: reward.amount ?? 0,
+          active: reward.active,
+        };
+      });
+
     return NextResponse.json({
       totals: {
         movements: ledger.length,
@@ -244,7 +306,7 @@ export async function GET(request: NextRequest) {
       plans: plansRes.data ?? [],
       fairness: fairnessRes.data ?? null,
       heartSettings: heartsRes.data ?? null,
-      milestones: milestonesRes.data ?? [],
+      milestones: inviteRewards,
       missions: missionsRes.data ?? [],
       codes: codesRes.data ?? [],
       attempts: attemptsRes.data ?? [],
@@ -268,14 +330,40 @@ export async function PATCH(request: NextRequest) {
 
     const body = (await request.json()) as Record<string, unknown>;
 
+    /*
+     * A settings switch rather than a number or a retirement.
+     *
+     * Only the named ones, and only on fairness_settings — a generic
+     * "set any boolean the caller names" would let this endpoint write
+     * columns nobody put on this page.
+     */
+    if (typeof body.enabled === "boolean" && typeof body.field === "string") {
+      if (!SWITCHES.has(body.field)) {
+        return NextResponse.json({ error: "That switch is not here." }, { status: 400 });
+      }
+
+      const { error } = await auth.supabase
+        .from("fairness_settings")
+        .update({ [body.field]: body.enabled })
+        .eq("id", 1);
+
+      if (error) throw error;
+      return NextResponse.json({ ok: true });
+    }
+
     // Retiring a row rather than changing a number.
     if (typeof body.active === "boolean" && typeof body.table === "string") {
       if (!TOGGLEABLE.has(body.table)) {
         return NextResponse.json({ error: "That cannot be retired here." }, { status: 400 });
       }
 
+      // Same redirection as the number path: the id the panel holds for
+      // an invite reward belongs to referral_rewards.
+      const table =
+        body.table === "referral_milestones" ? "referral_rewards" : body.table;
+
       const { error } = await auth.supabase
-        .from(body.table)
+        .from(table)
         .update({ active: body.active })
         .eq("id", String(body.id ?? ""));
 
@@ -310,7 +398,23 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    const update = { [field]: Math.round(value) };
+    /*
+     * An invite reward is a referral_rewards row, not a milestone.
+     *
+     * The panel still says `reward_value` on `referral_milestones`,
+     * because that is the shape every other reward on this page has and
+     * the id it sends is already the reward's own. Translating here
+     * keeps one vocabulary in the UI while writing to the table 077
+     * actually moved the money to.
+     */
+    let column = field;
+
+    if (table === "referral_milestones" && field === "reward_value") {
+      table = "referral_rewards";
+      column = "amount";
+    }
+
+    const update = { [column]: Math.round(value) };
     let query = auth.supabase.from(table).update(update);
 
     if (target.by === "singleton") query = query.eq("id", 1);

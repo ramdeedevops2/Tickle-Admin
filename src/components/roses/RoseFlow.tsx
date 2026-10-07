@@ -3,6 +3,7 @@
 import { Section, SettingList, SettingRow } from "@/components/ui/page";
 import { PagedList } from "@/components/ui/paged-list";
 import { Button } from "@/components/ui/button";
+import { SwitchRow } from "@/components/ui/switch";
 import { StatStrip } from "@/components/ui/stat-strip";
 import { Coins, Flower2, ShoppingBag, TrendingDown } from "lucide-react";
 import Link from "next/link";
@@ -182,12 +183,20 @@ export function RoseSpending({ data, patch, busy }: PanelProps) {
   const fairness = data.fairness ?? {};
   const hearts = data.heartSettings ?? {};
 
+  // Absent on a database that has not had 124 yet, which reads as off —
+  // the same answer the column's own default gives.
+  const paidMedia = Boolean(
+    (fairness as Record<string, unknown>).paid_media_enabled,
+  );
+
   const num = (source: Record<string, unknown>, key: string) =>
     Number(source[key] ?? 0);
 
   return (
     <div className="space-y-6">
       <Section
+        collapsible
+        defaultOpen={true}
         title="Flares"
         hint="What one costs after the daily free ones are gone."
       >
@@ -216,6 +225,8 @@ export function RoseSpending({ data, patch, busy }: PanelProps) {
       </Section>
 
       <Section
+        collapsible
+        defaultOpen={false}
         title="Hearts"
         hint="Dropping is free up to a point. Extending never is."
       >
@@ -263,6 +274,8 @@ export function RoseSpending({ data, patch, busy }: PanelProps) {
       </Section>
 
       <Section
+        collapsible
+        defaultOpen={false}
         title="Bringing matches back"
         hint="The price climbs each time the same pair comes back."
       >
@@ -304,10 +317,35 @@ export function RoseSpending({ data, patch, busy }: PanelProps) {
       </Section>
 
       <Section
+        collapsible
+        defaultOpen={false}
         title="Saving a photo"
         hint="The sender picks a price in this range and keeps a share."
       >
         <SettingList>
+          {/*
+            The switch comes first, because until it is on none of the
+            numbers under it do anything.
+
+            The feature is built and shipped off. Turning it on is what
+            makes the price control appear in the app when somebody
+            sends a photo; turning it off hides it again and stops any
+            price being accepted, without a release either way.
+          */}
+          <SwitchRow
+            label="Let people charge for photos"
+            hint={
+              paidMedia
+                ? "On. Someone sending a photo can set a price to save it."
+                : "Off. Photos send as they always have, and the prices below do nothing yet."
+            }
+            checked={paidMedia}
+            disabled={busy}
+            onCheckedChange={(next) =>
+              patch({ field: "paid_media_enabled", enabled: next })
+            }
+          />
+
           <SettingRow
             label="Lowest a sender may charge"
             control={

@@ -30,7 +30,7 @@ import {
 export function RosePacks({ data, patch, busy }: PanelProps) {
   return (
     <div className="space-y-6">
-      <Section title="Packs" hint="What somebody can buy, and for how much.">
+      <Section collapsible defaultOpen={true} title="Packs" hint="What somebody can buy, and for how much.">
         {data.packs.length === 0 ? (
           <p className="py-3 text-[0.92rem] text-muted-foreground">
             No packs yet.
@@ -141,6 +141,8 @@ export function RosePacks({ data, patch, busy }: PanelProps) {
       </Section>
 
       <Section
+        collapsible
+        defaultOpen={false}
         title="Promotions"
         hint="Changes what a pack gives, without changing the pack."
       >
@@ -208,6 +210,8 @@ export function RoseEarning({ data, patch, busy }: PanelProps) {
         looked live, could be edited, and could never take effect.
       */}
       <Section
+        collapsible
+        defaultOpen={false}
         title="Signing up"
         hint="Given once, when their profile goes live. Everybody starts on Free, so this is the only plan it can come from."
       >
@@ -234,6 +238,8 @@ export function RoseEarning({ data, patch, busy }: PanelProps) {
       </Section>
 
       <Section
+        collapsible
+        defaultOpen={false}
         title="Inviting friends"
         hint="Rewards for bringing somebody in, paid in roses."
       >
@@ -284,7 +290,7 @@ export function RoseEarning({ data, patch, busy }: PanelProps) {
         )}
       </Section>
 
-      <Section title="Missions" hint="City missions that pay roses.">
+      <Section collapsible defaultOpen={false} title="Missions" hint="City missions that pay roses.">
         {missions.length === 0 ? (
           <p className="py-3 text-[0.92rem] text-muted-foreground">
             No mission pays roses.
@@ -330,6 +336,8 @@ export function RoseEarning({ data, patch, busy }: PanelProps) {
       */}
 
       <Section
+        collapsible
+        defaultOpen={false}
         title="Codes"
         hint="Made on Plans. Retiring one stops it straight away."
       >

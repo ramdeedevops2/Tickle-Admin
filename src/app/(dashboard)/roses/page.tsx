@@ -33,21 +33,25 @@ import type { RosePayload } from "@/components/roses/parts";
  * actually sold, two tabs apart. Overview was a summary of Earning and
  * Spending, which made it a third place to look at the same numbers.
  *
- * Three now, by the question being asked:
+ * Three now, by what somebody is doing:
  *
- *   Money    — what is sold, and what sold. Packs plus purchases.
- *   Supply   — how roses enter and leave, and the summary of both.
- *   Records  — what happened to one person's roses. Ledger plus grants,
- *              which belong together because granting some is followed
- *              immediately by checking the ledger to see it worked.
+ *   Numbers — looking. Totals, what sold, what moved.
+ *   Prices  — changing. Every cost and reward, and nothing else.
+ *   People  — one person. Granting and deducting by hand.
+ *
+ * An earlier pass grouped these by subject — Money, Supply, Records —
+ * which left Supply holding the totals *and* both sets of settings, so
+ * the longest tab was also the one where reading and writing happened
+ * together. Splitting on reading versus writing is what makes Numbers
+ * safe to leave open and keeps every editable field in one place.
  */
 
-type Tab = "money" | "supply" | "records";
+type Tab = "numbers" | "prices" | "people";
 
 const TABS: { value: Tab; label: string }[] = [
-  { value: "money", label: "Money" },
-  { value: "supply", label: "Supply" },
-  { value: "records", label: "Records" },
+  { value: "numbers", label: "Numbers" },
+  { value: "prices", label: "Prices" },
+  { value: "people", label: "People" },
 ];
 
 /*
@@ -58,19 +62,25 @@ const TABS: { value: Tab; label: string }[] = [
  * fallback to the first tab, which looks like the link is broken.
  */
 const MOVED: Record<string, Tab> = {
-  overview: "supply",
-  packs: "money",
-  purchases: "money",
-  earning: "supply",
-  spending: "supply",
-  ledger: "records",
-  grants: "records",
+  // The original seven.
+  overview: "numbers",
+  packs: "prices",
+  purchases: "numbers",
+  earning: "prices",
+  spending: "prices",
+  ledger: "numbers",
+  grants: "people",
+  // And the three they were folded into first, so links made in
+  // between keep working too.
+  money: "prices",
+  supply: "numbers",
+  records: "numbers",
 };
 
 const BLURB: Record<Tab, string> = {
-  money: "What people can buy with real money, and what they actually bought.",
-  supply: "How roses get made, what they are spent on, and the balance of the two.",
-  records: "Every rose that has moved, and the controls to move some by hand.",
+  numbers: "What is happening with roses right now.",
+  prices: "What roses cost, and what they are worth.",
+  people: "Give roses to someone, or take some back.",
 };
 
 export default function RosesPage() {
@@ -91,7 +101,9 @@ function RosesView() {
     if (TABS.some((entry) => entry.value === asked)) return asked as Tab;
     // An old link — send it where that content went rather than
     // dropping the reader on the first tab with no explanation.
-    return MOVED[asked] ?? "supply";
+    // Numbers by default: opening this page is more often a look
+    // than a change, and it is the one tab nothing can be broken from.
+    return MOVED[asked] ?? "numbers";
   });
 
   const [data, setData] = useState<RosePayload | null>(null);
@@ -144,38 +156,52 @@ function RosesView() {
     const props = { data, patch, busy };
 
     /*
-     * Order within each tab is the order the question gets asked.
+     * One job per tab, because there are only three.
      *
-     * Money puts what is for sale above what sold, because a price is
-     * read against its takings. Supply leads with the summary and then
-     * shows the two halves it summarises. Records puts the ledger
-     * first — it is what you came to look at; granting is the rarer
-     * thing you do while here.
+     * The seven original tabs became three, which was right, but the
+     * three were still named after the subject rather than the task:
+     * "Supply" stacked the totals, the earning settings and the
+     * spending settings in one scroll, so looking something up and
+     * changing something happened on the same screen — the longest
+     * tab, and the one you had to scroll past half of whichever
+     * thing you did not come for.
+     *
+     * Split by what somebody is doing instead:
+     *
+     *   Numbers — looking. Totals, what sold, what moved. Read only,
+     *             so nothing here can be changed by accident.
+     *   Prices  — changing. Every number that sets a cost or a
+     *             reward, and nothing else.
+     *   People  — one person. Grant or deduct, which is the only
+     *             thing on this page aimed at an individual.
+     *
+     * The division is reading versus writing, which is also why
+     * Numbers is safe to leave open and Prices is not.
      */
     switch (tab) {
-      case "money":
+      case "numbers":
+        return (
+          <div className="space-y-10">
+            <RoseOverview {...props} />
+            <RosePurchases {...props} />
+            <RoseLedger {...props} />
+          </div>
+        );
+      case "prices":
         return (
           <div className="space-y-10">
             <RosePacks {...props} />
-            <RosePurchases {...props} />
+            <RoseEarning {...props} />
+            <RoseSpending {...props} />
             {/* What a saved photo costs and how the money splits.
                 It is priced in roses, so it belongs with the rest of
                 what roses buy rather than on Messaging. */}
             <RulesEditor groups={["Paid media"]} />
           </div>
         );
-      case "supply":
+      case "people":
         return (
           <div className="space-y-10">
-            <RoseOverview {...props} />
-            <RoseEarning {...props} />
-            <RoseSpending {...props} />
-          </div>
-        );
-      case "records":
-        return (
-          <div className="space-y-10">
-            <RoseLedger {...props} />
             <RoseGrants {...props} reload={load} />
           </div>
         );

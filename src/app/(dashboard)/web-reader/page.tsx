@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Globe, Loader2, Lock, Trash2 } from "lucide-react";
+import { Check, Copy, Globe, Loader2, Lock, Search, Trash2 } from "lucide-react";
 
 /**
  * Read a website: type an address, see what is on the page.
@@ -37,6 +37,7 @@ import { Globe, Loader2, Lock, Trash2 } from "lucide-react";
 
 type Rule = { domain: string; reason: string | null };
 type View = "text" | "headings" | "links" | "tables" | "images";
+type ScreenTab = "reader" | "accounts";
 
 const STORAGE_KEY = "tickle-admin.web-reader.blocked";
 
@@ -65,11 +66,19 @@ export default function WebReaderPage() {
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState<ReadResult | null>(null);
   const [view, setView] = useState<View>("text");
+  const [screenTab, setScreenTab] = useState<ScreenTab>("reader");
 
   const [rules, setRules] = useState<Rule[]>([]);
   const [newDomain, setNewDomain] = useState("");
   const [newReason, setNewReason] = useState("");
   const [blockedOpen, setBlockedOpen] = useState(false);
+
+  const [accountName, setAccountName] = useState("");
+  const [accountSite, setAccountSite] = useState("instagram.com");
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [accountUrls, setAccountUrls] = useState<string[] | null>(null);
+  const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
   // Read after mount: localStorage does not exist during the server render.
   useEffect(() => {
@@ -135,6 +144,58 @@ export default function WebReaderPage() {
     [rules],
   );
 
+  const scanAccounts = useCallback(async () => {
+    const name = accountName.trim();
+    const site = accountSite
+      .trim()
+      .toLowerCase()
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .replace(/\/$/, "");
+
+    setScanError(null);
+    if (site !== "instagram.com") {
+      setScanError("Enter instagram.com as the search website.");
+      return;
+    }
+
+    setScanning(true);
+    setScanError(null);
+    setAccountUrls(null);
+
+    try {
+      const { data, error: failure } = await adminFetch<{ urls: string[] }>(
+        "/api/account-scan",
+        {
+          method: "POST",
+          body: JSON.stringify({ name, site }),
+        },
+      );
+
+      if (failure) setScanError(failure);
+      else setAccountUrls(data?.urls ?? []);
+    } catch {
+      setScanError("Could not search Instagram links. Try again.");
+    } finally {
+      setScanning(false);
+    }
+  }, [accountName, accountSite]);
+
+  const copyAccountUrl = useCallback(
+    async (url: string) => {
+      try {
+        await navigator.clipboard.writeText(url);
+        setCopiedUrl(url);
+        window.setTimeout(() => {
+          setCopiedUrl((current) => (current === url ? null : current));
+        }, 1500);
+      } catch {
+        toast.error({ title: "Could not copy URL", body: "Copy the link directly instead." });
+      }
+    },
+    [toast],
+  );
+
   const views = useMemo(
     () =>
       page
@@ -153,15 +214,30 @@ export default function WebReaderPage() {
     <div className="space-y-6">
       <PageHeader
         title="Read a website"
-        description="For testing. Type the address of any public web page and see what is on it — its title, text, headings, links and tables. Nothing is saved, and blocked websites cannot be read."
-        actions={
+        description="Read public web pages or search Instagram for personal profile links."
+        actions={screenTab === "reader" ? (
           <Button variant="secondary" onClick={() => setBlockedOpen(true)}>
             <Lock className="size-4" />
             Blocked websites
           </Button>
-        }
+        ) : undefined}
       />
 
+      <nav aria-label="Read a website sections">
+        <Segmented
+          value={screenTab}
+          onChange={(tab) => {
+            setScreenTab(tab);
+            setBlockedOpen(false);
+          }}
+          options={[
+            { value: "reader", label: "Read a page" },
+            { value: "accounts", label: "Instagram accounts" },
+          ]}
+        />
+      </nav>
+
+      {screenTab === "reader" && (
       <Section
         title="Read a page"
         hint="The page is opened in Chrome and read once it has finished loading, so it takes a few seconds. Pages that need a login, or that ask automated readers to stay away, will say so instead of showing anything."
@@ -198,7 +274,106 @@ export default function WebReaderPage() {
         )}
       </Section>
 
-      {page && (
+      )}
+
+      {screenTab === "accounts" && (
+      <Section
+        title="Find personal Instagram accounts"
+        hint="Enter a name. Scan tries to omit creator/business accounts based on public search text; this can misclassify accounts."
+      >
+        <form
+          className="space-y-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void scanAccounts();
+          }}
+        >
+          <div className="grid gap-2 md:grid-cols-2">
+            <Input
+              value={accountName}
+              onChange={(event) => setAccountName(event.target.value)}
+              placeholder="Name to search"
+              maxLength={80}
+              disabled={scanning}
+              aria-label="Name to search"
+            />
+            <Input
+              value={accountSite}
+              onChange={(event) => setAccountSite(event.target.value)}
+              maxLength={100}
+              disabled={scanning}
+              placeholder="instagram.com"
+              aria-label="Website to search"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="submit"
+              disabled={
+                scanning ||
+                accountName.trim().length < 2 ||
+                !accountSite.trim()
+              }
+            >
+              {scanning ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Search className="size-4" />
+              )}
+              {scanning ? "Scanning…" : "SCAN"}
+            </Button>
+            <p className="text-muted-foreground text-sm">
+              Results show as URLs only.
+            </p>
+          </div>
+        </form>
+
+        {scanError && (
+          <p className="text-destructive mt-3 text-sm" role="alert">
+            {scanError}
+          </p>
+        )}
+
+        {accountUrls && accountUrls.length === 0 && (
+          <EmptyState
+            icon={Search}
+            title="No personal Instagram URLs found"
+            body="Try another name."
+            className="py-8"
+          />
+        )}
+
+        {!!accountUrls?.length && (
+          <ul className="mt-4 space-y-2 border-t border-foreground/[0.07] pt-3">
+            {accountUrls.map((url) => (
+              <li key={url} className="flex items-center gap-2 text-sm">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={copiedUrl === url ? "URL copied" : "Copy URL"}
+                  title={copiedUrl === url ? "Copied" : "Copy URL"}
+                  onClick={() => void copyAccountUrl(url)}
+                >
+                  {copiedUrl === url ? <Check /> : <Copy />}
+                </Button>
+                <a
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="break-all underline-offset-4 hover:underline"
+                >
+                  {url}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+
+      </Section>
+      )}
+
+      {screenTab === "reader" && page && (
         <Section
           title={page.title ?? "Untitled page"}
           hint={page.description ?? undefined}

@@ -1,4 +1,7 @@
+"use client";
+
 import * as React from "react";
+import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -74,6 +77,8 @@ export function Section({
   children,
   tone = "default",
   className,
+  collapsible = false,
+  defaultOpen = false,
 }: {
   title: string;
   hint?: string;
@@ -82,7 +87,22 @@ export function Section({
   /** "danger" marks a block whose actions cannot be undone. */
   tone?: "default" | "danger";
   className?: string;
+  /*
+   * Folds the block away behind its own title.
+   *
+   * Off by default, so every screen that already uses Section keeps
+   * the shape it has. It is for a page that is one long column of
+   * settings — Roses has ten sections of them, and all ten being
+   * open at once makes the thing you came to change as hard to find
+   * as the nine you did not.
+   */
+  collapsible?: boolean;
+  /** Only meaningful with `collapsible`. */
+  defaultOpen?: boolean;
 }) {
+  const [open, setOpen] = React.useState(defaultOpen);
+  const shown = !collapsible || open;
+
   return (
     <section
       className={cn(
@@ -96,8 +116,31 @@ export function Section({
       <div
         className={cn(
           "flex flex-wrap items-start justify-between gap-3 px-4 py-3",
-          tone === "danger" && "bg-destructive/[0.04]"
+          tone === "danger" && "bg-destructive/[0.04]",
+          collapsible && "cursor-pointer select-none"
         )}
+        /*
+         * The whole header is the target, not a small chevron.
+         *
+         * A collapsed section is a title and a line of hint; asking
+         * somebody to hit a 16px arrow beside it when the obvious
+         * thing to click is the title itself is the kind of detail
+         * that makes an admin feel fiddly.
+         */
+        {...(collapsible
+          ? {
+              role: "button" as const,
+              tabIndex: 0,
+              "aria-expanded": open,
+              onClick: () => setOpen((value) => !value),
+              onKeyDown: (event: React.KeyboardEvent) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setOpen((value) => !value);
+                }
+              },
+            }
+          : {})}
       >
         <div className="min-w-0 max-w-xl">
           <h2
@@ -115,12 +158,23 @@ export function Section({
           )}
         </div>
 
-        {actions && (
-          <div className="flex shrink-0 items-center gap-2">{actions}</div>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {actions}
+          {collapsible && (
+            <ChevronDown
+              className={cn(
+                "size-4 text-muted-foreground transition-transform",
+                open && "rotate-180"
+              )}
+              aria-hidden
+            />
+          )}
+        </div>
       </div>
 
-      <div className="border-t border-foreground/[0.06] p-4">{children}</div>
+      {shown && (
+        <div className="border-t border-foreground/[0.06] p-4">{children}</div>
+      )}
     </section>
   );
 }
