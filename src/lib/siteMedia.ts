@@ -65,11 +65,17 @@ export type SiteMediaAsset = {
   uploadedAt: string;
 };
 
+export type SiteStoreLinks = {
+  appStoreUrl?: string;
+  googlePlayUrl?: string;
+};
+
 export type SiteMediaManifest = {
   version: 1;
   updatedAt: string;
   assets: SiteMediaAsset[];
   slots: Partial<Record<SiteMediaSlotKey, string>>;
+  storeLinks?: SiteStoreLinks;
 };
 
 export function emptySiteMediaManifest(): SiteMediaManifest {

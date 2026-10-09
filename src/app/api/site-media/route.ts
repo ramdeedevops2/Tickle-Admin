@@ -94,6 +94,37 @@ export async function POST(request: NextRequest) {
     const action = String(body.action ?? "");
     const bucket = auth.supabase.storage.from(SITE_MEDIA_BUCKET);
 
+    if (action === "save-store-links") {
+      const validateStoreUrl = (value: unknown, allowedHosts: string[]) => {
+        const url = String(value ?? "").trim();
+        if (!url) return { value: "", valid: true };
+
+        try {
+          const parsed = new URL(url);
+          if (parsed.protocol !== "https:" || !allowedHosts.includes(parsed.hostname.toLowerCase())) {
+            return { value: "", valid: false };
+          }
+          return { value: parsed.toString(), valid: true };
+        } catch {
+          return { value: "", valid: false };
+        }
+      };
+
+      const appStore = validateStoreUrl(body.appStoreUrl, ["apps.apple.com", "itunes.apple.com"]);
+      const googlePlay = validateStoreUrl(body.googlePlayUrl, ["play.google.com"]);
+      if (!appStore.valid || !googlePlay.valid) {
+        return NextResponse.json(
+          { error: "Enter HTTPS listing URLs from apps.apple.com or play.google.com." },
+          { status: 400 },
+        );
+      }
+
+      const manifest = await readManifest(auth.supabase);
+      manifest.storeLinks = { appStoreUrl: appStore.value, googlePlayUrl: googlePlay.value };
+      await writeManifest(auth.supabase, manifest);
+      return NextResponse.json({ manifest });
+    }
+
     if (action === "create-upload") {
       const slotKey = body.slot;
       const slot = SITE_MEDIA_SLOTS.find((candidate) => candidate.key === slotKey);

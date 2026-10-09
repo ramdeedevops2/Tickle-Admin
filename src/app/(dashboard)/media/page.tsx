@@ -14,6 +14,7 @@ import {
 } from "@/lib/siteMedia";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader, PageSkeleton } from "@/components/ui/page";
 import { useSearchParams } from "next/navigation";
@@ -206,6 +207,8 @@ function MediaSlots() {
           {error}
         </div>
       )}
+
+
 
       <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-4">
         {SITE_MEDIA_SLOTS.map((slot) => {
@@ -447,15 +450,90 @@ function MediaSlots() {
   );
 }
 
+function StoreLinksEditor() {
+  const [manifest, setManifest] = useState<SiteMediaManifest | null>(null);
+  const [appStoreUrl, setAppStoreUrl] = useState("");
+  const [googlePlayUrl, setGooglePlayUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data, error } = await adminFetch<MediaPayload>("/api/site-media");
+    if (error) {
+      setError(error);
+      return;
+    }
+    setManifest(data?.manifest ?? null);
+    setAppStoreUrl(data?.manifest.storeLinks?.appStoreUrl ?? "");
+    setGooglePlayUrl(data?.manifest.storeLinks?.googlePlayUrl ?? "");
+    setError(null);
+  }, []);
+
+  useLoadOnMount(load);
+
+  const save = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    const { data, error } = await adminFetch<MediaPayload>("/api/site-media", {
+      method: "POST",
+      body: JSON.stringify({ action: "save-store-links", appStoreUrl, googlePlayUrl }),
+    });
+    if (error) setError(error);
+    else {
+      setManifest(data?.manifest ?? null);
+      setSaved(true);
+    }
+    setBusy(false);
+  }, [appStoreUrl, googlePlayUrl]);
+
+  if (!manifest) return error ? <p className="text-[0.92rem] text-destructive">{error}</p> : <PageSkeleton sections={1} />;
+
+  return (
+    <div className="space-y-5">
+      {error && <div role="alert" className="rounded-lg border border-destructive/35 bg-destructive/5 px-3 py-2 text-[0.86rem] text-destructive">{error}</div>}
+      <Card className="shadow-none">
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle className="text-base">App store links</CardTitle>
+              <CardDescription className="mt-1">These links power the Apple App Store and Google Play buttons in the website footer.</CardDescription>
+            </div>
+            {saved && <Badge>live</Badge>}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-1.5 text-sm font-medium">
+              Apple App Store URL
+              <Input type="url" value={appStoreUrl} onChange={(event) => { setAppStoreUrl(event.target.value); setSaved(false); }} placeholder="https://apps.apple.com/..." disabled={busy} />
+            </label>
+            <label className="space-y-1.5 text-sm font-medium">
+              Google Play URL
+              <Input type="url" value={googlePlayUrl} onChange={(event) => { setGooglePlayUrl(event.target.value); setSaved(false); }} placeholder="https://play.google.com/store/apps/details?id=..." disabled={busy} />
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">Leave a field blank to use its website default. Use HTTPS store listing URLs.</p>
+            <Button type="button" disabled={busy} onClick={() => void save()}>
+              <Save className="h-4 w-4" />
+              {busy ? "Saving…" : "Save store links"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 /**
  * Everything that shows on the public website.
  *
  * ── Why the two are one screen ────────────────────────────────
  *
- * The pictures on the landing page and the wording of /terms and
- * /privacy are the same job — keeping the public site right — done by
- * the same person. They were two sidebar entries, which meant two
- * places to look for "change the website".
+ * Pictures, store links, and the wording of /terms and /privacy all
+ * belong to the public website, so they live together here.
  *
  * ── Why each tab loads on its own ─────────────────────────────
  *
@@ -465,7 +543,7 @@ function MediaSlots() {
  * make, so neither tab's loading gates the other.
  */
 
-type Tab = "pictures" | "legal";
+type Tab = "pictures" | "store-links" | "legal";
 
 export default function WebsiteScreen() {
   const searchParams = useSearchParams();
@@ -478,12 +556,14 @@ export default function WebsiteScreen() {
 
   const tabs = [
     ...(mayEditMedia ? [{ value: "pictures" as const, label: "Pictures" }] : []),
+    ...(mayEditMedia ? [{ value: "store-links" as const, label: "App store links" }] : []),
     ...(mayEditLegal ? [{ value: "legal" as const, label: "Terms and privacy" }] : []),
   ];
 
-  const [tab, setTab] = useState<Tab>(() =>
-    searchParams.get("tab") === "legal" ? "legal" : "pictures",
-  );
+  const [tab, setTab] = useState<Tab>(() => {
+    const requested = searchParams.get("tab");
+    return requested === "legal" || requested === "store-links" ? requested : "pictures";
+  });
 
   // A tab this admin cannot open — from a stale link, or from holding
   // only one of the two grants — falls back to the one they can.
@@ -495,7 +575,7 @@ export default function WebsiteScreen() {
     <div className="space-y-5">
       <PageHeader
         title="Pictures and pages"
-        description="What people see on the Gogter website: the pictures on the front page, and the wording of the terms and privacy pages."
+        description="Manage the Gogter website’s pictures, app store links, and terms and privacy pages."
         actions={
           tabs.length > 1 ? (
             <Segmented value={current} onChange={setTab} options={tabs} />
@@ -504,6 +584,7 @@ export default function WebsiteScreen() {
       />
 
       {current === "pictures" && mayEditMedia && <MediaSlots />}
+      {current === "store-links" && mayEditMedia && <StoreLinksEditor />}
       {current === "legal" && mayEditLegal && <LegalEditor />}
     </div>
   );
