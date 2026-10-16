@@ -12,6 +12,7 @@
 
 # testing
 /coverage
+/artifacts/
 /index.lock
 # next.js
 /.next/

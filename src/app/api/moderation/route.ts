@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { failed, requireAdmin } from "@/lib/supabase/admin";
+import { preserveAndRemoveFlag } from "@/lib/moderationRemoval";
 
 /**
  * The moderation queue.
@@ -239,14 +240,15 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "That flag is gone." }, { status: 404 });
     }
 
-    await auth.supabase
-      .from("content_flags")
-      .update({
-        status: keep ? "kept" : "removed",
-        reviewed_by: auth.user?.id,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq("id", id);
+    if (keep) {
+      const { error } = await auth.supabase.from("content_flags").update({
+        status: "kept", reviewed_by: auth.user.id, reviewed_at: new Date().toISOString(),
+      }).eq("id", id);
+      if (error) throw error;
+    } else {
+      await preserveAndRemoveFlag(auth.supabase, id, auth.user.id, reason,
+        process.env.NEXT_PUBLIC_SUPABASE_URL!);
+    }
 
     await auth.supabase.rpc("record_admin_action", {
       p_admin_id: auth.user?.id,

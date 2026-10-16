@@ -22,6 +22,7 @@ import { SafetyRulesPanel } from "@/components/safety/SafetyRulesPanel";
 import { TicketsPanel } from "@/components/safety/TicketsPanel";
 import { VerificationPanel } from "@/components/safety/VerificationPanel";
 import { DailiesPanel } from "@/components/safety/DailiesPanel";
+import { ChildSafetyPanel } from "@/components/safety/ChildSafetyPanel";
 
 /**
  * The moderation queue.
@@ -114,10 +115,11 @@ export default function SafetyPage() {
   );
 }
 
-type View = "reports" | "patterns" | "tickets" | "verification" | "dailies";
+type View = "reports" | "patterns" | "tickets" | "verification" | "dailies" | "child-safety";
 
 const VIEWS: { value: View; label: string }[] = [
   { value: "reports", label: "Reports" },
+  { value: "child-safety", label: "Child safety" },
   { value: "verification", label: "Verification" },
   { value: "dailies", label: "Today's posts" },
   { value: "tickets", label: "Tickets" },
@@ -138,6 +140,7 @@ const VIEWS: { value: View; label: string }[] = [
 const MOVED: Record<string, View> = { queue: "reports" };
 
 const BLURB: Record<View, string> = {
+  "child-safety": "Restricted cases, evidence references, containment decisions and records of reports submitted to authorities.",
   reports: "Reports waiting for a decision, and everything already decided.",
   patterns: "Scam messages and dodgy links the app watches for.",
   tickets: "Support messages from members, and the replies sent back.",
@@ -333,6 +336,8 @@ function SafetyView() {
       />
 
       <Explainer>{BLURB[view]}</Explainer>
+
+      {view === "child-safety" && <ChildSafetyPanel />}
 
       {view === "patterns" && <SafetyRulesPanel />}
       {view === "tickets" && <TicketsPanel />}
