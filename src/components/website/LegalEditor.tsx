@@ -150,7 +150,7 @@ export function LegalEditor() {
                 {saved === page.slug && !dirty && <Badge>saved</Badge>}
 
                 <a
-                  href={`/${page.slug}`}
+                  href={`https://gogter.com/${page.slug}`}
                   target="_blank"
                   rel="noreferrer"
                   className="ml-auto inline-flex items-center gap-1 text-[0.86rem] text-muted-foreground underline-offset-2 hover:underline"

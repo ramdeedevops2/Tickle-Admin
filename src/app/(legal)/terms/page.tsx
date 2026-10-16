@@ -18,15 +18,9 @@ export const metadata: Metadata = {
 };
 
 /*
- * Re-rendered at most once an hour.
- *
- * Fully static would mean an edit in the admin needing a deploy to
- * appear, which defeats the point of storing the text in the database.
- * Fully dynamic would put a database call between Apple's reviewer and
- * the page. An hour is soon enough for a legal correction and rare
- * enough that the page is nearly always served from cache.
+ * Read the current document on every request, including direct SQL edits.
  */
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 export default async function TermsPage() {
   const content = await loadLegalPage("terms");

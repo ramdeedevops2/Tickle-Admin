@@ -99,7 +99,7 @@ export async function PATCH(request: NextRequest) {
 
     if (!effectiveOn) effectiveOn = new Date().toISOString().slice(0, 10);
 
-    const { error } = await auth.supabase
+    const { data, error } = await auth.supabase
       .from("legal_pages")
       .update({
         title,
@@ -108,9 +108,18 @@ export async function PATCH(request: NextRequest) {
         updated_at: new Date().toISOString(),
         updated_by: auth.user.id,
       })
-      .eq("slug", slug);
+      .eq("slug", slug)
+      .select("slug")
+      .maybeSingle();
 
     if (error) throw error;
+
+    if (!data) {
+      return NextResponse.json(
+        { error: "The legal page was not found. Restore its database row before saving." },
+        { status: 404 },
+      );
+    }
 
     return NextResponse.json({ ok: true });
   } catch (error) {

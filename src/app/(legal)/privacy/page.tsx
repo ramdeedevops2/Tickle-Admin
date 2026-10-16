@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   description: "What Gogter collects, why, and what you can do about it.",
 };
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 export default async function PrivacyPage() {
   const content = await loadLegalPage("privacy");
