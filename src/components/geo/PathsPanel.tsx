@@ -13,6 +13,7 @@ import {
 import { useToast } from "@/components/ui/toast";
 import { adminFetch } from "@/lib/adminFetch";
 import { useLoadOnMount } from "@/lib/useLoadOnMount";
+import { PATHS_FEED_KEYS, PATHS_NUMBER_LIMITS, type PathsSettings as Settings } from "@/lib/pathsSettings";
 
 /**
  * The live tuning knobs for Paths Crossed.
@@ -24,22 +25,29 @@ import { useLoadOnMount } from "@/lib/useLoadOnMount";
  * service role behind an admin check.
  */
 
-type Settings = {
-  crossing_radius_m: number;
-  max_accuracy_m: number;
-  max_time_gap_min: number;
-  ping_retention_hours: number;
-  share_deck_budget: boolean;
-};
-
 const FIELDS: {
-  key: keyof Omit<Settings, "share_deck_budget">;
+  key: keyof typeof PATHS_NUMBER_LIMITS;
   anchor: string;
   label: string;
   hint: string;
   unit: string;
   section: string;
 }[] = [
+  {
+    key: "history_days", anchor: "history-days", label: "How far back Paths can show",
+    hint: "Days since the most recent crossing. Set 0 to include all stored encounters. This changes visibility, not data retention.",
+    unit: "days", section: "Feed",
+  },
+  {
+    key: "min_crossings", anchor: "min-crossings", label: "Minimum crossing count",
+    hint: "Show someone only after at least this many recorded crossings.",
+    unit: "times", section: "Feed",
+  },
+  {
+    key: "feed_limit", anchor: "feed-limit", label: "People per Paths feed",
+    hint: "Maximum number of people returned whenever the app refreshes Paths.",
+    unit: "people", section: "Feed",
+  },
   {
     key: "crossing_radius_m",
     anchor: "crossing-radius",
@@ -74,7 +82,13 @@ const FIELDS: {
   },
 ];
 
-const SECTIONS = ["What counts", "Privacy"];
+const SECTIONS = ["Feed", "What counts", "Privacy"];
+const FEED_SWITCHES = [
+  { key: "respect_gender_preference", label: "Apply gender preferences", hint: "Show people who match each member's interested-in preference. Off shows all genders in Paths." },
+  { key: "hide_liked", label: "Hide people already liked", hint: "Exclude people the member has already liked." },
+  { key: "hide_passed", label: "Hide people already passed", hint: "Exclude people the member has already passed." },
+] as const;
+const isFeedField = (key: string) => (PATHS_FEED_KEYS as readonly string[]).includes(key);
 
 /*
  * What each group of settings is for, in words rather than field names.
@@ -87,6 +101,10 @@ const SECTIONS = ["What counts", "Privacy"];
  * adjustable with any confidence.
  */
 const SECTION_COPY: Record<string, { title: string; hint: string }> = {
+  Feed: {
+    title: "Who appears in Paths",
+    hint: "These rules are applied by the server. Member blocks, private visibility, and account moderation still apply.",
+  },
   "What counts": {
     title: "What counts as crossing paths",
     hint: "All three have to be true at once. Loosen any of them and more people appear in each other's Paths — including some who were never really near each other.",
@@ -102,6 +120,9 @@ export function PathsPanel() {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [shared, setShared] = useState(false);
+  const [filters, setFilters] = useState({ respect_gender_preference: true, hide_liked: true, hide_passed: true });
+  const [sortOrder, setSortOrder] = useState<Settings["sort_order"]>("most_crossings");
+  const [feedReady, setFeedReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -110,7 +131,7 @@ export function PathsPanel() {
     setLoading(true);
     setError(null);
 
-    const { data, error } = await adminFetch<{ settings: Settings }>("/api/paths-settings");
+    const { data, error } = await adminFetch<{ settings: Settings; feed_controls_ready: boolean }>("/api/paths-settings");
 
     if (error || !data) {
       setError(error ??"Failed to load Paths settings.");
@@ -125,6 +146,10 @@ export function PathsPanel() {
       ),
     );
     setShared(data.settings.share_deck_budget);
+    setFeedReady(data.feed_controls_ready);
+    setFilters({ respect_gender_preference: data.settings.respect_gender_preference,
+      hide_liked: data.settings.hide_liked, hide_passed: data.settings.hide_passed });
+    setSortOrder(data.settings.sort_order);
     setLoading(false);
   }, []);
 
@@ -132,17 +157,25 @@ export function PathsPanel() {
 
   const dirty =
     settings !== null &&
-    (FIELDS.some((field) => draft[field.key] !== String(settings[field.key])) ||
+    (FIELDS.some((field) => (!isFeedField(field.key) || feedReady) && draft[field.key] !== String(settings[field.key])) ||
+      (feedReady && (sortOrder !== settings.sort_order || FEED_SWITCHES.some(({ key }) => filters[key] !== settings[key]))) ||
       shared !== settings.share_deck_budget);
 
   const save = useCallback(async () => {
-    setSaving(true);
     setError(null);
+    const activeFields = FIELDS.filter(field => !isFeedField(field.key) || feedReady);
+    const missing = activeFields.find(field => !draft[field.key]?.trim());
+    if (missing) {
+      setError(`Enter a value for ${missing.label.toLowerCase()}.`);
+      return;
+    }
+    setSaving(true);
 
     const body: Record<string, unknown> = Object.fromEntries(
-      FIELDS.map((field) => [field.key, Number(draft[field.key])]),
+      activeFields.map((field) => [field.key, Number(draft[field.key])]),
     );
     body.share_deck_budget = shared;
+    if (feedReady) Object.assign(body, filters, { sort_order: sortOrder });
 
     const { error } = await adminFetch("/api/paths-settings", {
       method: "PATCH",
@@ -155,13 +188,13 @@ export function PathsPanel() {
     } else {
       toast.success({
         title: "Saved",
-        body: "The next pairing run uses these.",
+        body: "Feed rules apply on refresh. Crossing rules apply on the next pairing run.",
       });
       await load();
     }
 
     setSaving(false);
-  }, [draft, shared, load, toast]);
+  }, [draft, shared, filters, sortOrder, feedReady, load, toast]);
 
   return (
     <div className="w-full space-y-4">
@@ -198,6 +231,11 @@ export function PathsPanel() {
               title={SECTION_COPY[section].title}
               hint={SECTION_COPY[section].hint}
             >
+              {section === "Feed" && !feedReady && (
+                <p role="status" className="mb-3 text-sm text-muted-foreground">
+                  Apply database migration 132_paths_admin_feed_controls.sql to enable these feed controls.
+                </p>
+              )}
               <SettingList>
                 {FIELDS.filter((field) => field.section === section).map((field) => (
                   <SettingRow
@@ -209,6 +247,10 @@ export function PathsPanel() {
                       <>
                         <Input
                           type="number"
+                          min={PATHS_NUMBER_LIMITS[field.key].min}
+                          max={PATHS_NUMBER_LIMITS[field.key].max}
+                          step={1}
+                          disabled={isFeedField(field.key) && !feedReady}
                           value={draft[field.key] ??""}
                           onChange={(event) =>
                             setDraft((current) => ({
@@ -226,6 +268,21 @@ export function PathsPanel() {
                   />
                 ))}
               </SettingList>
+              {section === "Feed" && (
+                <div className="mt-3 space-y-1">
+                  {FEED_SWITCHES.map(({ key, label, hint }) => (
+                    <SwitchRow key={key} label={label} hint={hint} disabled={!feedReady}
+                      checked={filters[key]} onCheckedChange={value => setFilters(current => ({ ...current, [key]: value }))} />
+                  ))}
+                  <SettingRow label="Sort Paths by" hint="Choose which eligible people appear first."
+                    control={<select aria-label="Sort Paths by" value={sortOrder} disabled={!feedReady}
+                      onChange={event => setSortOrder(event.target.value as Settings["sort_order"])}
+                      className="rounded-md border border-input bg-background px-3 py-2 text-sm">
+                      <option value="most_crossings">Most crossings</option>
+                      <option value="most_recent">Most recent</option>
+                    </select>} />
+                </div>
+              )}
             </Section>
           ))}
 
